@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SK Racer</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+<section class="svg-section">
+    <object data="line.html" width="100%" height="500px" type="text/html"></object>
+</section>
+
+
+<section class="course-section">
+    <h2>Course</h2>
+    <div id="course-container">
+        <!-- Course table will be populated here -->
+    </div>
+</section>
+
+<section class="controls-section">
+    <div>
+        <label for="update-interval">Update Interval (ms):</label>
+        <input type="number" id="update-interval" value="1000" min="500">
+        <button id="toggle-updates">Pause Updates</button>
+        <p>Timestamp: <span id="timestamp">N/A</span></p>
+    </div>
+</section>
+
+<section class="options-section">
+    <h2>Plugin options</h2>
+    <div id="options-content">
+        <!-- Options table will be populated here -->
+    </div>
+</section>
+
+<!--script src="app.js"></script-->
+</body>
+
+</html>

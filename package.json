@@ -1,0 +1,30 @@
+{
+  "name": "signalk-racer",
+  "version": "0.0.1",
+  "description": "Signalk plugin to calculate values of interest to sail racers",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gregw/signalk-racer.git"
+  },
+  "keywords": [
+    "signalk-webapp",
+    "signalk-node-server-plugin",
+    "signalk-category-utility"
+  ],
+  "signalk-plugin-enabled-by-default": false,
+  "signalk": {
+    "appIcon": "./racer72x72.png",
+    "displayName": "Signalk Racer WebApp"
+  },
+  "main": "index.js",
+  "author": "gregw@wiltel.org",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/gregw/signalk-racer/issues"
+  },
+  "homepage": "https://github.com/gregw/signalk-racer#readme"
+}

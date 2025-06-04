@@ -1,0 +1,63 @@
+body {
+  font-family: Arial, sans-serif;
+  display: flex;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+
+
+svg {
+  width: 100vmin;
+  height: 100vmin;
+}
+
+
+
+line {
+  stroke-width: 1;
+  stroke: green;
+}
+
+#hull {
+  stroke: purple;
+  stroke-width: 1;
+  stroke-linecap: round;
+}
+
+#mast {
+  stroke: purple;
+  stroke-width: 1;
+  stroke-linecap: round;
+}
+
+#trueWind {
+  stroke: blue;
+}
+
+
+#boatSpeed {
+  stroke: rgb(0, 89, 255);
+}
+
+#calculatedWind {
+  stroke: red;
+}
+
+#sensorSpeed {
+  stroke: green;
+}
+
+#apparentWind {
+  stroke: orange;
+}
+
+#groundWind {
+  stroke: black;
+}
+
+
+#groundSpeed {
+  stroke: darkgray;
+}
