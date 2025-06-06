@@ -20,11 +20,13 @@
     "appIcon": "racer72x72.png",
     "displayName": "Signalk Racer WebApp"
   },
-  "main": "index.js",
   "author": "gregw@wiltel.org",
   "license": "Apache-2.0",
   "bugs": {
     "url": "https://github.com/gregw/signalk-racer/issues"
   },
-  "homepage": "https://github.com/gregw/signalk-racer#readme"
+  "homepage": "https://github.com/gregw/signalk-racer#readme",
+  "dependencies": {
+    "geolib": "^3.3.4"
+  }
 }

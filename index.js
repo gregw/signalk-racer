@@ -1,15 +1,15 @@
 module.exports = (app) => {
-
+    const geolib = require('geolib')
     const racerSchema = {
         title: 'Set System Time with sudo',
         type: 'object',
         properties: {
-            lineStarboard: {
+            startLineStb: {
                 type: 'string',
                 title: 'Line starboard waypoint name',
                 default: 'startBoat'
             },
-            linePort: {
+            startLinePort: {
                 type: 'string',
                 title: 'Line port waypoint name',
                 default: 'startPin'
@@ -43,17 +43,17 @@ module.exports = (app) => {
         id: 'signalk-racer',
         name: 'SignalK Racing Plugin',
         start: (options, restartPlugin) => {
-            if (!options.linePort || !options.lineStarboard) {
-                app.error('Missing waypoint names: linePort and/or lineStarboard not configured.');
+            if (!options.startLinePort || !options.startLineStb) {
+                app.error('Missing waypoint names: startLinePort and/or startLineStb not configured.');
                 return;
             }
-            app.debug('linePort:' + options.linePort);
-            app.debug('lineStarboard:' + options.lineStarboard);
+            app.debug('startLinePort:' + options.startLinePort);
+            app.debug('startLineStb:' + options.startLineStb);
             app.debug('app.selfId:' + app.selfId);
-            app.debug('getSelfPath(design)' + JSON.stringify(app.getSelfPath('design')));
 
             let state = {
-                wayPointsScanned: false
+                wayPointsScanned: false,
+                gpsFromBow: app.getSelfPath('sensors.gps.fromBow')
             }
 
             function sendDelta(path, value) {
@@ -98,31 +98,43 @@ module.exports = (app) => {
                         {}
                     ).then(data => {
                         state.wayPointsScanned = true;
+                        state.startLinePort = null;
+                        state.startLineStb = null;
                         app.debug(JSON.stringify(data));
                         for (const [key, value] of Object.entries(data)) {
                             app.debug(`Key: ${key}, Value:`, JSON.stringify(value));
 
-                            if (value.name === options.linePort) {
+                            if (value.name === options.startLinePort) {
                                 pos = waypointToPosition(value);
                                 if (pos) {
-                                    app.debug('linePort.position:' + pos);
-                                    state.linePort = pos;
-                                    sendDelta('racing.startLinePort', pos);
+                                    app.debug('startLinePort.position:' + JSON.stringify(pos));
+                                    state.startLinePort = pos;
                                 }
                             }
-                            if (value.name === options.lineStarboard) {
+                            if (value.name === options.startLineStb) {
                                 pos = waypointToPosition(value);
-                                app.debug('lineStarboard.position:' + pos);
-                                state.lineStarboard = pos;
-                                sendDelta('racing.startLineStb', pos);
+                                app.debug('startLineStb.position:' + JSON.stringify(pos));
+                                state.startLineStb = pos;
                             }
                         }
+
+                        sendDelta('racing.startLinePort', state.startLinePort);
+                        sendDelta('racing.startLineStb', state.startLineStb);
+
                     }).catch(err => {
                         app.error(err);
                     });
                 }
             }
 
+            function calculateLine(position) {
+                if (position && state.startLinePort && state.startLineStb) {
+                    startLineLength = geolib.getDistance(state.startLinePort, state.startLineStb);
+                    app.debug('startLineLength:' + startLineLength);
+                    sendDelta('racing.startLineLength', startLineLength);
+                }
+            }
+            
             let positionSubscription = {
                 context: 'vessels.' + app.selfId,
                 subscribe: [
@@ -141,14 +153,16 @@ module.exports = (app) => {
                 },
 
                 (delta) => {
+                    position = null;
                     delta.updates.forEach((u) => {
-                        app.debug(JSON.stringify(u));
                         u.values.forEach((v) =>
                         {
-                            app.debug('POSITION ' + v.path + ' = ' + JSON.stringify(v.value))
-                            scanWaypoints();
+                            app.debug('POSITION ' + v.path + ' = ' + JSON.stringify(v.value));
+                            position = v.value;
                         })
                     })
+                    scanWaypoints();
+                    calculateLine(position);
                 }
             )
 
@@ -170,9 +184,7 @@ module.exports = (app) => {
                 },
                 (delta) => {
                     delta.updates.forEach((u) => {
-                        app.debug(JSON.stringify(u));
-                        u.values.forEach((v) =>
-                        {
+                        u.values.forEach((v) => {
                             app.debug("WAYPOINT: " + v.path + ' = ' + JSON.stringify(v.value))
                         })
                     });
