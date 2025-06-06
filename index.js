@@ -1,3 +1,4 @@
+const geolib = require("geolib");
 module.exports = (app) => {
     const geolib = require('geolib')
     const racerSchema = {
@@ -37,7 +38,7 @@ module.exports = (app) => {
         }
     }
 
-    let unsubscribes = []
+    const unsubscribes = [];
 
     const plugin = {
         id: 'signalk-racer',
@@ -51,12 +52,15 @@ module.exports = (app) => {
             app.debug('startLineStb:' + options.startLineStb);
             app.debug('app.selfId:' + app.selfId);
 
-            let state = {
+            let fromBow = app.getSelfPath('sensors.gps.fromBow');
+            let fromCenter = app.getSelfPath('sensors.gps.fromCenter');
+            const state = {
                 wayPointsScanned: false,
-                gpsFromBow: app.getSelfPath('sensors.gps.fromBow')
+                gpsFromBow: fromBow ? fromBow.value : null,
+                gpsFromCenter: fromCenter ? fromCenter.value : null,
             }
 
-            function sendDelta(path, value) {
+            function sendDelta(path, value, units = null) {
                 const delta = {
                     context: 'vessels.self',
                     updates: [
@@ -72,6 +76,18 @@ module.exports = (app) => {
                         }
                     ]
                 }
+
+                if (units) {
+                    delta.meta = [
+                        {
+                            path: path,
+                            value: {
+                                units: units
+                            }
+                        }
+                    ];
+                }
+
                 app.handleMessage('vessels.self', delta)
             }
 
@@ -105,48 +121,82 @@ module.exports = (app) => {
                             app.debug(`Key: ${key}, Value:`, JSON.stringify(value));
 
                             if (value.name === options.startLinePort) {
-                                pos = waypointToPosition(value);
+                                let pos = waypointToPosition(value);
                                 if (pos) {
                                     app.debug('startLinePort.position:' + JSON.stringify(pos));
                                     state.startLinePort = pos;
                                 }
                             }
                             if (value.name === options.startLineStb) {
-                                pos = waypointToPosition(value);
+                                let pos = waypointToPosition(value);
                                 app.debug('startLineStb.position:' + JSON.stringify(pos));
                                 state.startLineStb = pos;
                             }
                         }
-
                         sendDelta('racing.startLinePort', state.startLinePort);
                         sendDelta('racing.startLineStb', state.startLineStb);
-
                     }).catch(err => {
                         app.error(err);
                     });
                 }
             }
 
+            function toDegrees(rad) {
+                return rad * (180 / Math.PI);
+            }
+
+            function bowPosition(position) {
+                let headingTrue = app.getSelfPath("navigation.headingTrue");
+                if (!headingTrue)
+                    headingTrue = app.getSelfPath("navigation.courseOverGroundTrue");
+                if (!headingTrue || (!state.gpsFromBow && !state.gpsFromCenter))
+                    return position
+
+                headingTrue = toDegrees(headingTrue.value);
+                app.debug('headingTrue:' + headingTrue);
+                app.debug('position:' + JSON.stringify(position));
+                app.debug('gpsFromBow:' + JSON.stringify(state.gpsFromBow));
+                app.debug('gpsFromCenter:' + JSON.stringify(state.gpsFromCenter));
+
+                if (state.gpsFromBow)
+                    position = geolib.computeDestinationPoint(position, state.gpsFromBow, headingTrue);
+
+                app.debug('bowPosition:' + JSON.stringify(position));
+
+                if (state.gpsFromCenter)
+                    position = geolib.computeDestinationPoint(position, state.gpsFromCenter, headingTrue + 90);
+
+                app.debug('bowPosition:' + JSON.stringify(position));
+                return position;
+            }
+
             function calculateLine(position) {
+
                 if (position && state.startLinePort && state.startLineStb) {
                     startLineLength = geolib.getDistance(state.startLinePort, state.startLineStb);
                     app.debug('startLineLength:' + startLineLength);
-                    sendDelta('racing.startLineLength', startLineLength);
+                    sendDelta('racing.startLineLength', startLineLength, 'm');
+
+                    let distanceToLine = geolib.getDistanceFromLine(position, state.startLinePort, state.startLineStb);
+                    let lineBearing = geolib.getRhumbLineBearing(state.startLinePort, state.startLineStb);
+                    let bowBearing = geolib.getRhumbLineBearing(state.startLinePort, position);
+                    const angleDiff = ((bowBearing - lineBearing + 540) % 360) - 180;
+                    const signedDistance = angleDiff > 0 ? distanceToLine : -distanceToLine;
+                    app.debug('racing.distanceStartline:' + signedDistance);
+                    sendDelta('racing.distanceStartline', signedDistance, 'm');
                 }
-            }
-            
-            let positionSubscription = {
-                context: 'vessels.' + app.selfId,
-                subscribe: [
-                    {
-                        path: 'navigation.position',
-                        period: options.period,
-                    }
-                ]
             }
 
             app.subscriptionmanager.subscribe(
-                positionSubscription,
+                {
+                    context: 'vessels.' + app.selfId,
+                    subscribe: [
+                        {
+                            path: 'navigation.position',
+                            period: options.period,
+                        }
+                    ]
+                },
                 unsubscribes,
                 (subscriptionError) => {
                     app.error('Error:' + subscriptionError)
@@ -162,22 +212,20 @@ module.exports = (app) => {
                         })
                     })
                     scanWaypoints();
-                    calculateLine(position);
+                    calculateLine(bowPosition(position));
                 }
             )
 
-            let waypointSubscription = {
-                context: 'vessels.' + app.selfId,
-                subscribe: [
-                    {
-                        path: 'resources.waypoints.*', // Get all paths
-                        policy: 'instant'
-                    }
-                ]
-            }
-
             app.subscriptionmanager.subscribe(
-                waypointSubscription,
+                {
+                    context: 'vessels.' + app.selfId,
+                    subscribe: [
+                        {
+                            path: 'resources.waypoints.*', // Get all paths
+                            policy: 'instant'
+                        }
+                    ]
+                },
                 unsubscribes,
                 (subscriptionError) => {
                     app.error('Error:' + subscriptionError)
@@ -195,8 +243,8 @@ module.exports = (app) => {
         },
 
         stop: () => {
-            unsubscribes.forEach((f) => f())
-            unsubscribes = []
+            unsubscribes.forEach((f) => f());
+            unsubscribes.length = 0;
         },
 
         schema: () => racerSchema
