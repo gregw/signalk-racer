@@ -17,7 +17,7 @@
   ],
   "signalk-plugin-enabled-by-default": false,
   "signalk": {
-    "appIcon": "./racer72x72.png",
+    "appIcon": "racer72x72.png",
     "displayName": "Signalk Racer WebApp"
   },
   "main": "index.js",
