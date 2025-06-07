@@ -60,35 +60,26 @@ module.exports = (app) => {
                 gpsFromCenter: fromCenter ? fromCenter.value : null,
             }
 
-            function sendDelta(path, value, units = null) {
+            // send multiple deltas, each in the form of { path, value, units?}
+            function sendDeltas(updatesArray) {
+                const timestamp = new Date().toISOString();
+
                 const delta = {
                     context: 'vessels.self',
                     updates: [
                         {
                             source: { label: 'signalk-racer' },
-                            timestamp: new Date().toISOString(),
-                            values: [
-                                {
-                                    path: path,
-                                    value: value
-                                }
-                            ]
+                            timestamp: timestamp,
+                            values: updatesArray.map(({ path, value }) => ({
+                                path,
+                                value
+                            }))
                         }
                     ]
-                }
+                };
 
-                if (units) {
-                    delta.meta = [
-                        {
-                            path: path,
-                            value: {
-                                units: units
-                            }
-                        }
-                    ];
-                }
-
-                app.handleMessage('vessels.self', delta)
+                app.debug('Sending deltas:', JSON.stringify(delta));
+                app.handleMessage('vessels.self', delta);
             }
 
             function waypointToPosition(waypoint) {
@@ -133,8 +124,13 @@ module.exports = (app) => {
                                 state.startLineStb = pos;
                             }
                         }
-                        sendDelta('racing.startLinePort', state.startLinePort);
-                        sendDelta('racing.startLineStb', state.startLineStb);
+                        app.debug(
+                            `startLinePort: ${JSON.stringify(state.startLinePort)}, startLineStb: ${JSON.stringify(state.startLineStb)}`
+                        )
+                        sendDeltas([
+                            { path: 'racing.startLinePort', value: state.startLinePort },
+                            { path: 'racing.startLineStb', value: state.startLineStb },
+                        ]);
                     }).catch(err => {
                         app.error(err);
                     });
@@ -171,19 +167,38 @@ module.exports = (app) => {
             }
 
             function calculateLine(position) {
-
                 if (position && state.startLinePort && state.startLineStb) {
-                    startLineLength = geolib.getDistance(state.startLinePort, state.startLineStb);
+                    const startLineLength = geolib.getDistance(state.startLinePort, state.startLineStb);
                     app.debug('startLineLength:' + startLineLength);
-                    sendDelta('racing.startLineLength', startLineLength, 'm');
 
-                    let distanceToLine = geolib.getDistanceFromLine(position, state.startLinePort, state.startLineStb);
-                    let lineBearing = geolib.getRhumbLineBearing(state.startLinePort, state.startLineStb);
-                    let bowBearing = geolib.getRhumbLineBearing(state.startLinePort, position);
+                    // get the perpendicular distance from the line to the position
+                    const perpendicularDTL = geolib.getDistanceFromLine(position, state.startLinePort, state.startLineStb);
+
+                    // if the boat is inside a 45degree zone from the ends of the line, then use the distance to the closest
+                    // end of the line instead of the perpendicular distance
+                    const distanceToPort = geolib.getDistance(position, state.startLinePort);
+                    const distanceToStb = geolib.getDistance(position, state.startLineStb);
+                    let distanceToLine = perpendicularDTL;
+                    const diagonal45 = Math.sqrt(2 * perpendicularDTL * perpendicularDTL);
+                    if (distanceToPort > startLineLength && distanceToStb > diagonal45)
+                        distanceToLine = distanceToStb;
+                    else if (distanceToStb > startLineLength && distanceToPort > diagonal45)
+                        distanceToLine = distanceToPort;
+                    distanceToLine = Math.round(distanceToLine * 10) / 10;
+                    app.debug('distanceToLine:' + distanceToLine);
+
+                    // work out which side of the line we are on
+                    const lineBearing = geolib.getRhumbLineBearing(state.startLinePort, state.startLineStb);
+                    const bowBearing = geolib.getRhumbLineBearing(state.startLinePort, position);
                     const angleDiff = ((bowBearing - lineBearing + 540) % 360) - 180;
-                    const signedDistance = angleDiff > 0 ? distanceToLine : -distanceToLine;
-                    app.debug('racing.distanceStartline:' + signedDistance);
-                    sendDelta('racing.distanceStartline', signedDistance, 'm');
+                    const signedDTL = angleDiff > 0 ? distanceToLine : -distanceToPort;
+                    app.debug('racing.distanceStartline:' + signedDTL);
+
+                    // send the deltas
+                    sendDeltas([
+                        { path: 'racing.startLineLength', value: startLineLength },
+                        { path: 'racing.distanceStartline', value: signedDTL },
+                    ]);
                 }
             }
 
