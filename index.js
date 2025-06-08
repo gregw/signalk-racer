@@ -37,6 +37,76 @@ module.exports = (app) => {
         }
     }
 
+    // Update meta data
+    const timestamp = new Date().toISOString();
+    app.handleMessage('vessels.self', {
+        context: "vessels.self",
+        updates: [
+            {
+                timestamp: timestamp,
+                "meta": [
+                    {
+                        "path": "racing.distanceStartline",
+                        "value": {
+                            "units": "m",
+                            "description": "Minimum distance to the start line",
+                            "displayName": "Distance to start line",
+                            "shortName": "DTL",
+                            "zones": []
+                        }
+                    },
+                    {
+                        "path": "racing.startLineLength",
+                        "value": {
+                            "units": "m",
+                            "description": "Length of the start line",
+                            "displayName": "Length of the start line",
+                            "shortName": "SLL",
+                            "zones": []
+                        }
+                    },
+                    {
+                        "path": "racing.startLinePort.latitude",
+                        "value": {
+                            "units": "deg",
+                            "description": "Latitude of the port end of the start line",
+                            "displayName": "Port start end latitude",
+                            "shortName": "startPortLat",
+                        }
+                    },
+                    {
+                        "path": "racing.startLinePort.longitude",
+                        "value": {
+                            "units": "deg",
+                            "description": "Longitude of the port end of the start line",
+                            "displayName": "Port start end Longitude",
+                            "shortName": "startPortLong",
+                        }
+                    },
+                    {
+                        "path": "racing.startLineStb.latitude",
+                        "value": {
+                            "units": "deg",
+                            "description": "Latitude of the starboard end of the start line",
+                            "displayName": "Starboard start end latitude",
+                            "shortName": "startStbLat",
+                        }
+                    },
+                    {
+                        "path": "racing.startLineStb.longitude",
+                        "value": {
+                            "units": "deg",
+                            "description": "Longitude of the starboard end of the start line",
+                            "displayName": "Starboard start end Longitude",
+                            "shortName": "startStbLong",
+                        }
+                    }
+                ]
+            }
+        ]
+    });
+
+
     const unsubscribes = [];
 
     const plugin = {
@@ -186,6 +256,7 @@ module.exports = (app) => {
             function processPosition(position) {
                 if (!position) {
                     position = app.getSelfPath('navigation.position');
+                    app.debug('POSITION:' + JSON.stringify(position));
                     position = position ? position.value : null;
                 }
 
@@ -228,7 +299,7 @@ module.exports = (app) => {
                     app.debug('farFromLine:' + farFromLine);
                     const perpendicularToLine = Math.sin(absAngle * Math.PI / 180) * toEnd;
                     app.debug('perpendicularToLine:' + perpendicularToLine);
-                    const toLine = farFromLine ? Math.sqrt(toEnd * toEnd - perpendicularToLine * perpendicularToLine) : perpendicularToLine
+                    const toLine = Math.round(10 * farFromLine ? Math.sqrt(toEnd * toEnd - perpendicularToLine * perpendicularToLine) : perpendicularToLine) / 10;
                     const distanceToLine = ocs ? - toLine : toLine;
                     app.debug('distanceToLine:' + distanceToLine);
                     sendDeltas([
