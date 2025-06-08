@@ -1,4 +1,3 @@
-const geolib = require("geolib");
 module.exports = (app) => {
     const geolib = require('geolib')
     const racerSchema = {
@@ -98,50 +97,14 @@ module.exports = (app) => {
                 }
             }
 
-            function scanWaypoints() {
-                if (!state.wayPointsScanned) {
-                    app.resourcesApi.listResources(
-                        'waypoints',
-                        {}
-                    ).then(data => {
-                        state.wayPointsScanned = true;
-                        state.startLinePort = null;
-                        state.startLineStb = null;
-                        app.debug(JSON.stringify(data));
-                        for (const [key, value] of Object.entries(data)) {
-                            app.debug(`Key: ${key}, Value:`, JSON.stringify(value));
-
-                            if (value.name === options.startLinePort) {
-                                let pos = waypointToPosition(value);
-                                if (pos) {
-                                    app.debug('startLinePort.position:' + JSON.stringify(pos));
-                                    state.startLinePort = pos;
-                                }
-                            }
-                            if (value.name === options.startLineStb) {
-                                let pos = waypointToPosition(value);
-                                app.debug('startLineStb.position:' + JSON.stringify(pos));
-                                state.startLineStb = pos;
-                            }
-                        }
-                        app.debug(
-                            `startLinePort: ${JSON.stringify(state.startLinePort)}, startLineStb: ${JSON.stringify(state.startLineStb)}`
-                        )
-                        sendDeltas([
-                            { path: 'racing.startLinePort', value: state.startLinePort },
-                            { path: 'racing.startLineStb', value: state.startLineStb },
-                        ]);
-                    }).catch(err => {
-                        app.error(err);
-                    });
-                }
-            }
-
             function toDegrees(rad) {
                 return rad * (180 / Math.PI);
             }
 
             function bowPosition(position) {
+                if (position)
+                    return position; // TODO test the code below
+
                 let headingTrue = app.getSelfPath("navigation.headingTrue");
                 if (!headingTrue)
                     headingTrue = app.getSelfPath("navigation.courseOverGroundTrue");
@@ -166,42 +129,115 @@ module.exports = (app) => {
                 return position;
             }
 
-            function calculateLine(position) {
-                if (position && state.startLinePort && state.startLineStb) {
-                    const startLineLength = geolib.getDistance(state.startLinePort, state.startLineStb);
-                    app.debug('startLineLength:' + startLineLength);
+            function findLineAndThenProcessPosition(position, alwaysFindLine = false) {
+                if (!state.startLine || alwaysFindLine) {
+                    app.resourcesApi.listResources(
+                        'waypoints',
+                        {}
+                    ).then(data => {
+                        state.wayPointsScanned = true;
+                        
+                        const startLine = {
+                            stb: undefined,
+                            port: undefined,
+                            length: undefined,
+                            bearing: undefined,
+                        }
+                        for (const [key, value] of Object.entries(data)) {
+                            app.debug(`WAYPOINT: ${key}, Value:`, JSON.stringify(value));
+                            if (value.name === options.startLinePort) {
+                                let pos = waypointToPosition(value);
+                                if (pos)
+                                    startLine.port = pos;
+                            }
+                            if (value.name === options.startLineStb) {
+                                let pos = waypointToPosition(value);
+                                if (pos)
+                                    startLine.stb = pos;
+                            }
+                        }
+                        if (startLine.port && startLine.stb) {
+                            startLine.length = geolib.getPreciseDistance(startLine.port, startLine.stb, 0.1);
+                            startLine.bearing = geolib.getRhumbLineBearing(startLine.stb, startLine.port);
 
-                    // get the perpendicular distance from the line to the position
-                    const perpendicularDTL = geolib.getDistanceFromLine(position, state.startLinePort, state.startLineStb);
+                            app.debug(`STARTLINE: startLinePort: ${JSON.stringify(startLine)}`);
+                            state.startLine = startLine;
+                        } else {
+                            app.debug(`STARTLINE: undefined`);
+                            state.startLine = undefined;
+                        }
 
-                    // if the boat is inside a 45degree zone from the ends of the line, then use the distance to the closest
-                    // end of the line instead of the perpendicular distance
-                    const distanceToPort = geolib.getDistance(position, state.startLinePort);
-                    const distanceToStb = geolib.getDistance(position, state.startLineStb);
-                    let distanceToLine = perpendicularDTL;
-                    const diagonal45 = Math.sqrt(2 * perpendicularDTL * perpendicularDTL);
-                    if (distanceToPort > startLineLength && distanceToStb > diagonal45)
-                        distanceToLine = distanceToStb;
-                    else if (distanceToStb > startLineLength && distanceToPort > diagonal45)
-                        distanceToLine = distanceToPort;
-                    distanceToLine = Math.round(distanceToLine * 10) / 10;
+                        sendDeltas([
+                            { path: 'racing.startLinePort', value: startLine.port },
+                            { path: 'racing.startLineStb', value: startLine.stb },
+                            { path: 'racing.startLineLength', value: startLine.length },
+                        ]);
+
+                        processPosition(position);
+
+                    }).catch(err => {
+                        app.error(err);
+                    });
+                } else {
+                    processPosition(position);
+                }
+            }
+
+            function processPosition(position) {
+                if (!position) {
+                    position = app.getSelfPath('navigation.position');
+                    position = position ? position.value : null;
+                }
+
+                const startLine = state.startLine;
+
+                app.debug(`processPosition ${JSON.stringify(position)} to ${JSON.stringify(startLine)}`);
+                if (position && startLine ) {
+                    // handle the bow offset
+                    const bow= bowPosition(position);
+
+                    // Get the distance to each end of the line
+                    const toPort = geolib.getPreciseDistance(bow, startLine.port,  0.1);
+                    const toStb = geolib.getPreciseDistance(bow, startLine.stb, 0.1);
+
+                    const closest = toPort < toStb ? startLine.port : startLine.stb;
+                    let toEnd;
+                    let ocs;
+                    let angle;
+                    if (closest === state.startLine.port) {
+                        toEnd = toPort;
+                        app.debug('closest to Port(pin):' + toPort);
+                        const toBowBearing = geolib.getRhumbLineBearing(startLine.port, bow);
+                        app.debug('toBowBearing:' + toBowBearing);
+                        angle = toBowBearing - (startLine.bearing + 180) % 360;
+                    } else {
+                        toEnd = toStb;
+                        app.debug('closest to Stb(boat):' + toStb);
+                        const toBowBearing = geolib.getRhumbLineBearing(startLine.stb, bow);
+                        app.debug('toBowBearing:' + toBowBearing);
+                        angle = startLine.bearing - toBowBearing;
+                    }
+                    app.debug('angle:' + angle);
+                    angle = ((angle + 180) % 360 + 360) % 360 - 180;
+                    app.debug('angle:' + angle);
+                    ocs = angle < 0;
+                    app.debug('ocs:' + ocs);
+
+                    let absAngle = Math.abs(angle);
+                    const farFromLine = absAngle > 135;
+                    app.debug('farFromLine:' + farFromLine);
+                    const perpendicularToLine = Math.sin(absAngle * Math.PI / 180) * toEnd;
+                    app.debug('perpendicularToLine:' + perpendicularToLine);
+                    const toLine = farFromLine ? Math.sqrt(toEnd * toEnd - perpendicularToLine * perpendicularToLine) : perpendicularToLine
+                    const distanceToLine = ocs ? - toLine : toLine;
                     app.debug('distanceToLine:' + distanceToLine);
-
-                    // work out which side of the line we are on
-                    const lineBearing = geolib.getRhumbLineBearing(state.startLinePort, state.startLineStb);
-                    const bowBearing = geolib.getRhumbLineBearing(state.startLinePort, position);
-                    const angleDiff = ((bowBearing - lineBearing + 540) % 360) - 180;
-                    const signedDTL = angleDiff > 0 ? distanceToLine : -distanceToPort;
-                    app.debug('racing.distanceStartline:' + signedDTL);
-
-                    // send the deltas
                     sendDeltas([
-                        { path: 'racing.startLineLength', value: startLineLength },
-                        { path: 'racing.distanceStartline', value: signedDTL },
+                        { path: 'racing.distanceStartline', value: distanceToLine },
                     ]);
                 }
             }
 
+            // Subscribe to position updates.
             app.subscriptionmanager.subscribe(
                 {
                     context: 'vessels.' + app.selfId,
@@ -218,19 +254,24 @@ module.exports = (app) => {
                 },
 
                 (delta) => {
+                    app.debug('DELTA POSITIONS ' + JSON.stringify(delta));
                     position = null;
                     delta.updates.forEach((u) => {
                         u.values.forEach((v) =>
                         {
-                            app.debug('POSITION ' + v.path + ' = ' + JSON.stringify(v.value));
+                            app.debug('DELTA POSITION ' + v.path + ' = ' + JSON.stringify(v.value));
                             position = v.value;
                         })
                     })
-                    scanWaypoints();
-                    calculateLine(bowPosition(position));
+
+                    if (state.startLine)
+                        processPosition(position);
+                    else
+                        findLineAndThenProcessPosition(position, false);
                 }
             )
 
+            // Subscribe to waypoint updates.
             app.subscriptionmanager.subscribe(
                 {
                     context: 'vessels.' + app.selfId,
@@ -246,13 +287,14 @@ module.exports = (app) => {
                     app.error('Error:' + subscriptionError)
                 },
                 (delta) => {
+                    app.debug('DELTA WAYPOINTS ' + JSON.stringify(delta));
                     delta.updates.forEach((u) => {
                         u.values.forEach((v) => {
-                            app.debug("WAYPOINT: " + v.path + ' = ' + JSON.stringify(v.value))
+                            app.debug("DELTA WAYPOINT: " + v.path + ' = ' + JSON.stringify(v.value))
                         })
                     });
                     state.wayPointsScanned = false;
-                    scanWaypoints();
+                    findLineAndThenProcessPosition(undefined, true);
                 }
             )
         },
