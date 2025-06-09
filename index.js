@@ -66,6 +66,16 @@ module.exports = (app) => {
                         }
                     },
                     {
+                        "path": "racing.stbLineBias",
+                        "value": {
+                            "units": "m",
+                            "description": "Bias of the start line for the starboard end",
+                            "displayName": "Bias of the start line for the starboard end",
+                            "shortName": "SLL",
+                            "zones": []
+                        }
+                    },
+                    {
                         "path": "racing.startLinePort.latitude",
                         "value": {
                             "units": "deg",
@@ -171,6 +181,10 @@ module.exports = (app) => {
                 return rad * (180 / Math.PI);
             }
 
+            function toRadians(degrees) {
+                return degrees * (Math.PI / 180);
+            }
+
             function bowPosition(position) {
                 if (position)
                     return position; // TODO test the code below
@@ -199,7 +213,7 @@ module.exports = (app) => {
                 return position;
             }
 
-            function findLineAndThenProcessPosition(position, alwaysFindLine = false) {
+            function findLineAndThenProcess(position, alwaysFindLine = false) {
                 if (!state.startLine || alwaysFindLine) {
                     app.resourcesApi.listResources(
                         'waypoints',
@@ -244,6 +258,7 @@ module.exports = (app) => {
                         ]);
 
                         processPosition(position);
+                        processWind(undefined)
 
                     }).catch(err => {
                         app.error(err);
@@ -297,7 +312,7 @@ module.exports = (app) => {
                     let absAngle = Math.abs(angle);
                     const farFromLine = absAngle > 135;
                     app.debug('farFromLine:' + farFromLine);
-                    const perpendicularToLine = Math.sin(absAngle * Math.PI / 180) * toEnd;
+                    const perpendicularToLine = Math.sin(toRadians(absAngle)) * toEnd;
                     app.debug('perpendicularToLine:' + perpendicularToLine);
                     const toLine = Math.round(10 * farFromLine ? Math.sqrt(toEnd * toEnd - perpendicularToLine * perpendicularToLine) : perpendicularToLine) / 10;
                     const distanceToLine = ocs ? - toLine : toLine;
@@ -306,6 +321,25 @@ module.exports = (app) => {
                         { path: 'racing.distanceStartline', value: distanceToLine },
                     ]);
                 }
+            }
+
+            function processWind(twd) {
+
+                if (!twd) {
+                    twd = app.getSelfPath('environment.wind.directionTrue');
+                    app.debug('TWD:' + JSON.stringify(twd));
+                    twd = twd ? twd.value : null;
+                }
+
+                const startLine = state.startLine;
+                if (!twd || !startLine)
+                    return;
+
+                app.debug(`processWind ${twd} to ${JSON.stringify(startLine)}`);
+                const bias = startLine.length * Math.cos(toRadians(startLine.bearing) - (twd + Math.PI));
+                sendDeltas([
+                    { path: 'racing.stbLineBias', value: bias },
+                ]);
             }
 
             // Subscribe to position updates.
@@ -338,7 +372,7 @@ module.exports = (app) => {
                     if (state.startLine)
                         processPosition(position);
                     else
-                        findLineAndThenProcessPosition(position, false);
+                        findLineAndThenProcess(position, false);
                 }
             )
 
@@ -348,7 +382,7 @@ module.exports = (app) => {
                     context: 'vessels.' + app.selfId,
                     subscribe: [
                         {
-                            path: 'resources.waypoints.*', // Get all paths
+                            path: 'resources.waypoints.*',
                             policy: 'instant'
                         }
                     ]
@@ -358,14 +392,42 @@ module.exports = (app) => {
                     app.error('Error:' + subscriptionError)
                 },
                 (delta) => {
-                    app.debug('DELTA WAYPOINTS ' + JSON.stringify(delta));
+                    app.debug('DELTAS WAYPOINTS ' + JSON.stringify(delta));
                     delta.updates.forEach((u) => {
                         u.values.forEach((v) => {
                             app.debug("DELTA WAYPOINT: " + v.path + ' = ' + JSON.stringify(v.value))
                         })
                     });
                     state.wayPointsScanned = false;
-                    findLineAndThenProcessPosition(undefined, true);
+                    findLineAndThenProcess(undefined, true);
+                }
+            )
+
+            // Subscribe to TWD updates.
+            app.subscriptionmanager.subscribe(
+                {
+                    context: 'vessels.' + app.selfId,
+                    subscribe: [
+                        {
+                            path: 'environment.wind.directionTrue',
+                            period: options.period,
+                        }
+                    ]
+                },
+                unsubscribes,
+                (subscriptionError) => {
+                    app.error('Error:' + subscriptionError)
+                },
+                (delta) => {
+                    let twd;
+                    app.debug('DELTAS TWD ' + JSON.stringify(delta));
+                    delta.updates.forEach((u) => {
+                        u.values.forEach((v) => {
+                            twd = v.value;
+                            app.debug("DELTA TWD: " + v.path + ' = ' + twd)
+                        })
+                    });
+                    processWind(twd);
                 }
             )
         },
