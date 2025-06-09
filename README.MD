@@ -50,6 +50,10 @@ You can configure the plugin via the Signal K web interface or by editing `setti
 The `startLineStb` and `startLinePort` configurations are used to search resources for matching waypoints.  
 These waypoints can be modified in real time (e.g. moving or setting in Freeboard SK) and the algorithm with update to the new line.
 
+### 🔹 Bow position
+
+If `navigation.headingTrue` is not available, then `navigation.courseOverGroundTrue` is used when determining the position of the bow relative to the GPS position.
+
 ### 🔹 Distance to Start Line (`racing.distanceStartline`)
 
 - Computes the **signed minimum distance** from the **bow** of the boat to the configured start line.

@@ -186,9 +186,6 @@ module.exports = (app) => {
             }
 
             function bowPosition(position) {
-                if (position)
-                    return position; // TODO test the code below
-
                 let headingTrue = app.getSelfPath("navigation.headingTrue");
                 if (!headingTrue)
                     headingTrue = app.getSelfPath("navigation.courseOverGroundTrue");
@@ -201,16 +198,13 @@ module.exports = (app) => {
                 app.debug('gpsFromBow:' + JSON.stringify(state.gpsFromBow));
                 app.debug('gpsFromCenter:' + JSON.stringify(state.gpsFromCenter));
 
+                let bow = position;
                 if (state.gpsFromBow)
-                    position = geolib.computeDestinationPoint(position, state.gpsFromBow, headingTrue);
-
-                app.debug('bowPosition:' + JSON.stringify(position));
-
+                    bow = geolib.computeDestinationPoint(bow, state.gpsFromBow, headingTrue);
                 if (state.gpsFromCenter)
-                    position = geolib.computeDestinationPoint(position, state.gpsFromCenter, headingTrue + 90);
-
-                app.debug('bowPosition:' + JSON.stringify(position));
-                return position;
+                    bow = geolib.computeDestinationPoint(bow, state.gpsFromCenter, headingTrue + 90);
+                app.debug('bowPosition:' + JSON.stringify(bow));
+                return bow;
             }
 
             function findLineAndThenProcess(position, alwaysFindLine = false) {
@@ -303,18 +297,20 @@ module.exports = (app) => {
                         app.debug('toBowBearing:' + toBowBearing);
                         angle = startLine.bearing - toBowBearing;
                     }
-                    app.debug('angle:' + angle);
                     angle = ((angle + 180) % 360 + 360) % 360 - 180;
                     app.debug('angle:' + angle);
+                    app.debug('toEnd:' + toEnd);
                     ocs = angle < 0;
                     app.debug('ocs:' + ocs);
 
                     let absAngle = Math.abs(angle);
                     const farFromLine = absAngle > 135;
                     app.debug('farFromLine:' + farFromLine);
-                    const perpendicularToLine = Math.sin(toRadians(absAngle)) * toEnd;
+                    const perpendicularToLine = toEnd * Math.sin(toRadians(absAngle));
                     app.debug('perpendicularToLine:' + perpendicularToLine);
-                    const toLine = Math.round(10 * farFromLine ? Math.sqrt(toEnd * toEnd - perpendicularToLine * perpendicularToLine) : perpendicularToLine) / 10;
+                    let toLine = farFromLine ? Math.sqrt(toEnd * toEnd - perpendicularToLine * perpendicularToLine) : perpendicularToLine;
+                    toLine = Math.round(10 * toLine) / 10;
+                    app.debug('toLine:' + toLine);
                     const distanceToLine = ocs ? - toLine : toLine;
                     app.debug('distanceToLine:' + distanceToLine);
                     sendDeltas([
