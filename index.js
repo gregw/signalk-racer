@@ -37,7 +37,7 @@ module.exports = (app) => {
         }
     }
 
-    // Update meta data
+    // Update meta data for non standard paths
     const timestamp = new Date().toISOString();
     app.handleMessage('vessels.self', {
         context: "vessels.self",
@@ -46,17 +46,7 @@ module.exports = (app) => {
                 timestamp: timestamp,
                 "meta": [
                     {
-                        "path": "racing.distanceStartline",
-                        "value": {
-                            "units": "m",
-                            "description": "Minimum distance to the start line",
-                            "displayName": "Distance to start line",
-                            "shortName": "DTL",
-                            "zones": []
-                        }
-                    },
-                    {
-                        "path": "racing.startLineLength",
+                        "path": "navigation.racing.startLineLength",
                         "value": {
                             "units": "m",
                             "description": "Length of the start line",
@@ -66,7 +56,7 @@ module.exports = (app) => {
                         }
                     },
                     {
-                        "path": "racing.stbLineBias",
+                        "path": "navigation.racing.stbLineBias",
                         "value": {
                             "units": "m",
                             "description": "Bias of the start line for the starboard end",
@@ -75,47 +65,10 @@ module.exports = (app) => {
                             "zones": []
                         }
                     },
-                    {
-                        "path": "racing.startLinePort.latitude",
-                        "value": {
-                            "units": "deg",
-                            "description": "Latitude of the port end of the start line",
-                            "displayName": "Port start end latitude",
-                            "shortName": "startPortLat",
-                        }
-                    },
-                    {
-                        "path": "racing.startLinePort.longitude",
-                        "value": {
-                            "units": "deg",
-                            "description": "Longitude of the port end of the start line",
-                            "displayName": "Port start end Longitude",
-                            "shortName": "startPortLong",
-                        }
-                    },
-                    {
-                        "path": "racing.startLineStb.latitude",
-                        "value": {
-                            "units": "deg",
-                            "description": "Latitude of the starboard end of the start line",
-                            "displayName": "Starboard start end latitude",
-                            "shortName": "startStbLat",
-                        }
-                    },
-                    {
-                        "path": "racing.startLineStb.longitude",
-                        "value": {
-                            "units": "deg",
-                            "description": "Longitude of the starboard end of the start line",
-                            "displayName": "Starboard start end Longitude",
-                            "shortName": "startStbLong",
-                        }
-                    }
                 ]
             }
         ]
     });
-
 
     const unsubscribes = [];
 
@@ -246,9 +199,9 @@ module.exports = (app) => {
                         }
 
                         sendDeltas([
-                            { path: 'racing.startLinePort', value: startLine.port },
-                            { path: 'racing.startLineStb', value: startLine.stb },
-                            { path: 'racing.startLineLength', value: startLine.length },
+                            { path: 'navigation.racing.startLinePort', value: startLine.port },
+                            { path: 'navigation.racing.startLineStb', value: startLine.stb },
+                            { path: 'navigation.racing.startLineLength', value: startLine.length },
                         ]);
 
                         processPosition(position);
@@ -314,7 +267,7 @@ module.exports = (app) => {
                     const distanceToLine = ocs ? - toLine : toLine;
                     app.debug('distanceToLine:' + distanceToLine);
                     sendDeltas([
-                        { path: 'racing.distanceStartline', value: distanceToLine },
+                        { path: 'navigation.racing.distanceStartline', value: distanceToLine },
                     ]);
                 }
             }
@@ -334,7 +287,7 @@ module.exports = (app) => {
                 app.debug(`processWind ${twd} to ${JSON.stringify(startLine)}`);
                 const bias = startLine.length * Math.cos(toRadians(startLine.bearing) - (twd + Math.PI));
                 sendDeltas([
-                    { path: 'racing.stbLineBias', value: bias },
+                    { path: 'navigation.racing.stbLineBias', value: bias },
                 ]);
             }
 
