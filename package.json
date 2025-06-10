@@ -19,7 +19,7 @@
     "appIcon": "./racer72x72.png",
     "displayName": "Signalk Racer WebApp"
   },
-  "author": "gregw@wiltel.org",
+  "author": "gregw@mortbay.com",
   "license": "Apache-2.0",
   "bugs": {
     "url": "https://github.com/gregw/signalk-racer/issues"
