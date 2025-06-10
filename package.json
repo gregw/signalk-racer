@@ -1,7 +1,7 @@
 {
   "name": "signalk-racer",
-  "version": "0.0.1",
-  "description": "Signalk plugin to calculate values of interest to sail racers",
+  "version": "0.9.0",
+  "description": "Signalk plugin to calculate values of interest to sail racers: such as Distance to Line; Next leg TWA.",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -11,7 +11,6 @@
     "url": "git+https://github.com/gregw/signalk-racer.git"
   },
   "keywords": [
-    "signalk-webapp",
     "signalk-node-server-plugin",
     "signalk-category-utility"
   ],

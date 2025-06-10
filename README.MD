@@ -24,6 +24,8 @@ This plugin calculates and publishes the following Signal K paths:
 
 These values can be displayed in KIP, Freeboard-SK, or other Signal K clients.
 
+![KIP and Freeboard Screenshot](kip-freeboard-screenshot.png)
+
 ---
 
 ## ⚙️ Configuration

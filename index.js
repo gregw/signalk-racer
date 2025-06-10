@@ -223,7 +223,7 @@ module.exports = (app) => {
                         ]);
 
                         processPosition(position);
-                        processWind(undefined)
+                        processWind()
 
                     }).catch(err => {
                         app.error(err);
