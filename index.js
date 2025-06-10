@@ -19,6 +19,7 @@ module.exports = (app) => {
                 title: 'Update period in micro seconds',
                 default: 1000
             },
+            /* TODO
             speedToLine: {
                 type: 'number',
                 title: 'The percentage of the best STW seen during the start period to use when calculating the time to the start line. This assumes the boat can sail slower than its best speed at most wind angles. Or -1 to use the current STW',
@@ -34,6 +35,7 @@ module.exports = (app) => {
                 title: 'The downwind TWA to use when calculating the time to the line, or -1 to use the best achieved during the start period',
                 default: 155
             },
+             */
         }
     }
 
@@ -241,7 +243,7 @@ module.exports = (app) => {
                 const startLine = state.startLine;
 
                 app.debug(`processPosition ${JSON.stringify(position)} to ${JSON.stringify(startLine)}`);
-                if (position && startLine) {
+                if (position && startLine && (!state.activeRoute || state.activeRoute.pointIndex < 2)) {
                     // handle the bow offset
                     const bow = bowPosition(position);
 
@@ -282,14 +284,20 @@ module.exports = (app) => {
                     app.debug('toLine:' + toLine);
                     const distanceToLine = ocs ? -toLine : toLine;
                     app.debug('distanceToLine:' + distanceToLine);
+                    state.distanceToLine = distanceToLine;
                     sendDeltas([
                         {path: 'navigation.racing.distanceStartline', value: distanceToLine},
+                    ]);
+                }
+                else if (state.distanceToLine) {
+                    state.distanceToLine = null;
+                    sendDeltas([
+                        {path: 'navigation.racing.distanceStartline', value: null},
                     ]);
                 }
             }
 
             function processWind(twd) {
-
                 if (!twd) {
                     twd = app.getSelfPath('environment.wind.directionTrue');
                     app.debug('TWD:' + JSON.stringify(twd));
@@ -304,21 +312,21 @@ module.exports = (app) => {
                 if (activeRoute) {
                     const nextLegHeading = activeRoute.nextLegHeading;
                     if (nextLegHeading) {
-                        nextTwa = (180 + toDegrees(twd) - nextLegHeading) % 360 - 180;
+                        nextTwa = (540 + toDegrees(twd) - nextLegHeading) % 360 - 180;
                         app.debug(`nextTwa: ${nextTwa}`);
                     }
                 }
 
                 let bias = null;
                 const startLine = state.startLine;
-                if (startLine && (!activeRoute || activeRoute.pointIndex <= 1)) {
+                if (startLine && (!activeRoute || activeRoute.pointIndex < 2)) {
                     app.debug(`processWind ${twd} to ${JSON.stringify(startLine)}`);
                     bias = startLine.length * Math.cos(toRadians(startLine.bearing) - (twd + Math.PI));
                 }
 
                 sendDeltas([
                     {path: 'navigation.racing.stbLineBias', value: bias},
-                    {path: 'navigation.racing.nextLegTrueWindAngle', value: toRadians(twd)},
+                    {path: 'navigation.racing.nextLegTrueWindAngle', value: toRadians(nextTwa)},
                 ]);
             }
 
@@ -386,6 +394,13 @@ module.exports = (app) => {
                         processPosition(position);
                     else
                         findLineAndThenProcess(position, false);
+
+                    if (!state.initActiveRoute) {
+                        state.initActiveRoute = true;
+                        const activeRoute = app.getSelfPath('navigation.course.activeRoute');
+                        if (activeRoute)
+                            processRoute(activeRoute.value);
+                    }
                 }
             )
 

@@ -10,17 +10,19 @@ GitHub repository: [https://github.com/gregw/signalk-racer](https://github.com/g
 
 This plugin calculates and publishes the following Signal K paths:
 
-| Path                                 | Description                                                    | Units |
-|--------------------------------------|----------------------------------------------------------------|--------|
-| `navigation.racing.distanceStartline`          | Signed minimum distance from the bow to the start line         | `m`    |
-| `navigation.racing.startLineLength`            | Total length of the start line                                 | `m`    |
-| `navigation.racing.stbLineBias`                | Bias of the start line toward the starboard end                | `m`    |
-| `navigation.racing.startLinePort.latitude`     | Latitude of the port (pin) end of the start line               | `deg`  |
-| `navigation.racing.startLinePort.longitude`    | Longitude of the port end                                      | `deg`  |
-| `navigation.racing.startLineStb.latitude`      | Latitude of the starboard (boat) end of the start line         | `deg`  |
-| `navigation.racing.startLineStb.longitude`     | Longitude of the starboard end                                 | `deg`  |
+| Path                                        | Description                                            | Units   | Standard |
+|---------------------------------------------|--------------------------------------------------------|---------|----------|
+| `navigation.racing.distanceStartline`       | Signed minimum distance from the bow to the start line | `m`     | Y        |
+| `navigation.racing.startLineLength`         | Total length of the start line                         | `m`     |          |
+| `navigation.racing.stbLineBias`             | Bias of the start line toward the starboard end        | `m`     |          |
+| `navigation.racing.startLinePort.latitude`  | Latitude of the port (pin) end of the start line       | `deg`   | Y        |
+| `navigation.racing.startLinePort.longitude` | Longitude of the port end                              | `deg`   | Y        |
+| `navigation.racing.startLineStb.latitude`   | Latitude of the starboard (boat) end of the start line | `deg`   | Y        |
+| `navigation.racing.startLineStb.longitude`  | Longitude of the starboard end                         | `deg`   | Y        |
+| `navigation.racing.nextLegHeading`          | True heading for the next leg of the course            | `deg`   |          |
+| `navigation.racing.nextLegTWA`              | True Wind Angle for the next leg of the course         | `deg`   |          |
 
-These values can be displayed in Freeboard-SK, KIP, or other Signal K clients.
+These values can be displayed in KIP, Freeboard-SK, or other Signal K clients.
 
 ---
 
@@ -30,16 +32,11 @@ You can configure the plugin via the Signal K web interface or by editing `setti
 
 ### Parameters:
 
-| Parameter          | Description                                                                                          | Default       |
-|--------------------|------------------------------------------------------------------------------------------------------|---------------|
-| `startLineStb`     | Name of the waypoint for the starboard (committee boat) end of the line                             | `"startBoat"` |
-| `startLinePort`    | Name of the waypoint for the port (pin) end of the line                                              | `"startPin"`  |
-| `period`           | How often to update values (in milliseconds)                                                         | `1000`        |
-| `speedToLine`      | Percentage of best STW to use for time-to-line calculations, or `-1` to use current STW (**unused**) | `80`          |
-| `twaUpToLine`      | Upwind TWA to assume for TTL estimates, or `-1` to auto-detect (**unused**)                          | `45`          |
-| `twaDownToLine`    | Downwind TWA to assume for TTL estimates, or `-1` to auto-detect (**unused**)                        | `155`         |
-
-> **Note:** `speedToLine`, `twaUpToLine`, and `twaDownToLine` are currently parsed but **not yet used** in calculations.
+| Parameter          | Description                                                                           | Default       |
+|--------------------|---------------------------------------------------------------------------------------|---------------|
+| `startLineStb`     | Name of the waypoint for the starboard (committee boat) end of the line               | `"startBoat"` |
+| `startLinePort`    | Name of the waypoint for the port (pin) end of the line                               | `"startPin"`  |
+| `period`           | How often to update values (in milliseconds)                                          | `1000`        |
 
 ---
 
@@ -77,6 +74,11 @@ If `navigation.headingTrue` is not available, then `navigation.courseOverGroundT
 - Line length (using `geolib.getPreciseDistance`)
 - Line bearing (rhumb line from starboard to port)
 
+###🔹Next Leg
+- If a course is active then the true bearing for the next leg is calculated as `navigation.racing.nextLegHeading`
+- If the `environment.wind.directionTrue` is available, then the True Wind Angle for the next leg is also calculated as `navigation.racing.nextLegHeading`
+- If the next mark of the active route is beyond the first mark, then the start line calculations are suspended.
+
 ---
 
 ## 🔄 Dependencies
@@ -90,7 +92,6 @@ If `navigation.headingTrue` is not available, then `navigation.courseOverGroundT
 - Add calculations for:
 - **Time to line** (using STW and heading or polar speeds)
 - **Laylines** and distance/time to them
-- **Next leg planning** (TWA, heading targets)
 - Include webapp UI for on-deck ease of "pinging" the line
 - Better integration with **Freeboard-SK** and **KIP** dashboards
 
