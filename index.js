@@ -149,11 +149,11 @@ module.exports = (app) => {
             }
 
             function toDegrees(rad) {
-                return rad ? rad * (180 / Math.PI) : undefined
+                return rad ? rad * (180 / Math.PI) : null;
             }
 
             function toRadians(degrees) {
-                return degrees ? degrees * (Math.PI / 180) : undefined;
+                return degrees ? degrees * (Math.PI / 180) : null;
             }
 
             function bowPosition(position) {
@@ -187,10 +187,10 @@ module.exports = (app) => {
                         state.wayPointsScanned = true;
 
                         const startLine = {
-                            stb: undefined,
-                            port: undefined,
-                            length: undefined,
-                            bearing: undefined,
+                            stb: null,
+                            port: null,
+                            length: null,
+                            bearing: null,
                         }
                         for (const [key, value] of Object.entries(data)) {
                             app.debug(`WAYPOINT: ${key}, Value:`, JSON.stringify(value));
@@ -213,7 +213,7 @@ module.exports = (app) => {
                             state.startLine = startLine;
                         } else {
                             app.debug(`STARTLINE: undefined`);
-                            state.startLine = undefined;
+                            state.startLine = null;
                         }
 
                         sendDeltas([
