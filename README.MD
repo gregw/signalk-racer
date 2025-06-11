@@ -28,6 +28,7 @@ These values can be displayed in KIP, Freeboard-SK, or other Signal K clients.
 
 ---
 
+
 ## ⚙️ Configuration
 
 You can configure the plugin via the Signal K web interface or by editing `settings.json` manually.
