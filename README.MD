@@ -83,6 +83,32 @@ If `navigation.headingTrue` is not available, then `navigation.courseOverGroundT
 
 ---
 
+## 🌐 Start Line REST API
+
+The plugin provides a REST API that allows external clients (e.g. KIP dashboards, mobile apps, or scripts) to **set or query the start line ends**. This can be used to "ping" the boat or pin end by calling a simple HTTP POST with or without a position.
+
+The plugin supports **partial line configuration**: you can set just one end (port or starboard), and it will store and emit that end's position immediately. Once both ends are defined, the full line geometry (length, bearing, bias) will be calculated.
+
+### 📮 API Endpoints
+
+| Method | Endpoint                               | Description                                      |
+|--------|----------------------------------------|--------------------------------------------------|
+| `GET`  | `/plugins/signalk-racer/startline/port` | Get the last known **port** end position    |
+| `POST` | `/plugins/signalk-racer/startline/port` | Set the **port (pin)** end of the start line     |
+| `GET`  | `/plugins/signalk-racer/startline/stb` | Get the last known **starboard** end position |
+| `POST` | `/plugins/signalk-racer/startline/stb` | Set the **starboard (boat)** end of the line     |
+
+### 🧾 POST Body Format (Optional)
+
+If a position is provided in the POST body, it should be:
+
+```json
+{
+  "latitude": -33.8,
+  "longitude": 151.2
+}
+```
+
 ## 🔄 Dependencies
 
 - [geolib](https://github.com/manuelbieh/geolib): Used for all geospatial math, including distances, bearings, and projections.

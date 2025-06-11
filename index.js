@@ -178,6 +178,36 @@ module.exports = (app) => {
                 return bow;
             }
 
+            plugin.setStartLineEnd = (req, res) => {
+                const end = req.params.end;  // "port" or "stb"
+                if (end !== 'port' && end !== 'stb') {
+                    res.status(400).send({error: 'End must be "port" or "stb"'});
+                    return;
+                }
+                let position = req.body;   // optional { latitude, longitude }
+
+                if (position) {
+                    if (typeof position.latitude !== 'number' || typeof position.longitude !== 'number') {
+                        res.status(400).send({error: 'Invalid position'});
+                        return;
+                    }
+                } else {
+                    position = app.getSelfPath('navigation.position');
+                }
+
+                if (!position) {
+                    res.status(400).send({error: 'No valid position available'});
+                    return;
+                }
+
+                // TODO create or modify a waypoint that is named options.startLinePort or options.startLineStb
+                //      the start line itself will be set when this plugin notices the deltas for those waypoints updates.
+
+                res.json({
+                    message: 'OK'
+                });
+            }
+
             function findLineAndThenProcess(position, alwaysFindLine = false) {
                 if (!state.startLine || alwaysFindLine) {
                     app.resourcesApi.listResources(
@@ -196,15 +226,20 @@ module.exports = (app) => {
                             app.debug(`WAYPOINT: ${key}, Value:`, JSON.stringify(value));
                             if (value.name === options.startLinePort) {
                                 let pos = waypointToPosition(value);
-                                if (pos)
+                                if (pos) {
+                                    startLine.portId = key;
                                     startLine.port = pos;
+                                }
                             }
                             if (value.name === options.startLineStb) {
                                 let pos = waypointToPosition(value);
-                                if (pos)
+                                if (pos) {
+                                    startLine.stbId = key;
                                     startLine.stb = pos;
+                                }
                             }
                         }
+
                         if (startLine.port && startLine.stb) {
                             startLine.length = geolib.getPreciseDistance(startLine.port, startLine.stb, 0.1);
                             startLine.bearing = geolib.getRhumbLineBearing(startLine.stb, startLine.port);
@@ -212,6 +247,7 @@ module.exports = (app) => {
                             app.debug(`STARTLINE: startLinePort: ${JSON.stringify(startLine)}`);
                             state.startLine = startLine;
                         } else {
+                            // TODO save a partial line, so the API can be used to complete the line.
                             app.debug(`STARTLINE: undefined`);
                             state.startLine = null;
                         }
@@ -494,7 +530,15 @@ module.exports = (app) => {
             unsubscribes.length = 0;
         },
 
-        schema: () => racerSchema
+        schema: () => racerSchema,
+
+        registerWithRouter: (router) => {
+            router.get('/startline/port', (req, res) => res.json(state.startLine ? state.startLine.port : null));
+            router.get('/startline/stb', (req, res) => res.json(state.startLine ? state.startLine.stb : null));
+            router.post('/startline/:end', (req, res) => { plugin.setStartLineEnd(req, res); });
+        },
+
+        getOpenApi: () => require('./openapi.json'),
     };
 
     return plugin;
