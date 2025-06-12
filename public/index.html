@@ -6,7 +6,7 @@
     <style>
         body {
             font-family: sans-serif;
-            max-width: 600px;
+            max-width: 100%;
             margin: 3em auto;
             text-align: center;
         }
@@ -25,8 +25,9 @@
 </head>
 <body>
 <h1>Set Start Line Ends</h1>
-<button onclick="setEnd('port')">Set Port End (Pin)</button>
-<button onclick="setEnd('stb')">Set Starboard End (Boat)</button>
+<div id="buttons">
+  <button onclick="setEnd('port')">Set Port End (Pin)</button><button onclick="setEnd('stb')">Set Starboard End (Boat)</button>
+</div>
 <div id="status"></div>
 
 <script>
