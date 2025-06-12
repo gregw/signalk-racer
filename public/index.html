@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>SignalK Racer</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            max-width: 600px;
+            margin: 3em auto;
+            text-align: center;
+        }
+        button {
+            padding: 1em 2em;
+            margin: 1em;
+            font-size: 1.2em;
+            cursor: pointer;
+        }
+        #status {
+            margin-top: 2em;
+            font-size: 1em;
+            color: green;
+        }
+    </style>
+</head>
+<body>
+<h1>Set Start Line Ends</h1>
+<button onclick="setEnd('port')">Set Port End (Pin)</button>
+<button onclick="setEnd('stb')">Set Starboard End (Boat)</button>
+<div id="status"></div>
+
+<script>
+    async function setEnd(end) {
+        const url = `/plugins/signalk-racer/startline/${end}`;
+        document.getElementById('status').textContent = `Sending request to ${url}...`;
+
+        try {
+            const res = await fetch(url, { method: 'PUT' });
+            if (res.ok) {
+                const data = await res.json();
+                document.getElementById('status').textContent = `✅ ${end.toUpperCase()} set at bow position.`;
+            } else {
+                const err = await res.text();
+                throw new Error(`Error ${res.status}: ${err}`);
+            }
+        } catch (e) {
+            document.getElementById('status').textContent = `❌ Failed: ${e.message}`;
+        }
+    }
+</script>
+</body>
+</html>

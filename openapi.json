@@ -11,48 +11,17 @@
 
   "paths": {
     "/startline/port": {
-      "post": {
+      "get": {
         "summary": "Set the port end of the start line",
-        "requestBody": {
-          "description": "Optional position of the port end. If omitted, it will use the boats position plus the bow offset.",
-          "required": false,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "latitude": { "type": "number" },
-                  "longitude": { "type": "number" }
-                },
-                "required": ["latitude", "longitude"]
-              }
-            }
-          }
-        },
         "responses": {
           "200": { "description": "Port end set" }
         }
       }
     },
     "/startline/stb": {
-      "post": {
+      "put": {
         "summary": "Set the starboard end of the start line",
-        "requestBody": {
-          "description": "Optional position of the starboard end. If omitted, it will use the boats position plus the bow offset.",
-          "required": false,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "latitude": { "type": "number" },
-                  "longitude": { "type": "number" }
-                },
-                "required": ["latitude", "longitude"]
-              }
-            }
-          }
-        },
+        "description": "Set the starboard end of the start line to the boats position plus the bow offset.",
         "responses": {
           "200": { "description": "Starboard end set" }
         }

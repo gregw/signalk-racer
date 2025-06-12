@@ -178,34 +178,83 @@ module.exports = (app) => {
                 return bow;
             }
 
-            plugin.setStartLineEnd = (req, res) => {
-                const end = req.params.end;  // "port" or "stb"
-                if (end !== 'port' && end !== 'stb') {
-                    res.status(400).send({error: 'End must be "port" or "stb"'});
-                    return;
-                }
-                let position = req.body;   // optional { latitude, longitude }
-
-                if (position) {
-                    if (typeof position.latitude !== 'number' || typeof position.longitude !== 'number') {
-                        res.status(400).send({error: 'Invalid position'});
+            plugin.setStartLineEnd = async (req, res) => {
+                try {
+                    const end = req.params.end;  // "port" or "stb"
+                    if (end !== 'port' && end !== 'stb') {
+                        res.status(400).send({error: 'End must be "port" or "stb"'});
                         return;
                     }
-                } else {
-                    position = app.getSelfPath('navigation.position');
+
+                    let position = app.getSelfPath('navigation.position');
+                    if (position)
+                        position = position.value;
+                    else {
+                        res.status(500).send({error: 'No valid position available'});
+                        return;
+                    }
+                    const bow = bowPosition(position);
+                    const startLine = state.startLine;
+                    const waypointName = options[`startLine${end.charAt(0).toUpperCase() + end.slice(1)}`];
+
+                    let waypointId = startLine ? startLine[end + 'Id'] : null;
+                    if (!waypointId) {
+                        // Get the ID of the last existing waypoint with the given name.
+                        const waypoints = await app.resourcesApi.listResources('waypoints', {});
+                        for (const [id, resource] of Object.entries(waypoints)) {
+                            if (resource.name === waypointName) {
+                                waypointId = id;
+                                // don't break here as we want the last waypoint with the given name
+                            }
+                        }
+                    }
+
+                    app.debug(`POSITION to set ${end}(${waypointName}/${waypointId}): ${JSON.stringify(bow)}`);
+
+                    const waypoint = {
+                        name: waypointName,
+                        feature: {
+                            type: 'Feature',
+                            geometry: {
+                                type: 'Point',
+                                coordinates: [bow.longitude, bow.latitude]
+                            },
+                            properties: {}
+                        }
+                    }
+
+                    app.debug(`waypoint: ${waypointId} -> ${end}/${waypointName} : ${JSON.stringify(waypoint)}`);
+
+                    if (waypointId)
+                        await app.resourcesApi.setResource('waypoints', waypointId, waypoint);
+                    else
+                        await app.resourcesApi.createResource('waypoints', waypoint);
+
+                    res.json({
+                        message: 'OK'
+                    });
+
+                    if (startLine)
+                    {
+                        const newStartLine = { ...state.startLine };
+                        newStartLine[end + 'Id'] = waypointId;
+                        newStartLine[end] = bow;
+                        startLine.length = geolib.getPreciseDistance(newStartLine.port, newStartLine.stb, 0.1);
+                        startLine.bearing = geolib.getRhumbLineBearing(newStartLine.stb, newStartLine.port);
+                        state.startLine = newStartLine;
+                        sendDeltas([
+                            { path: `navigation.racing.startLine${end.charAt(0).toUpperCase() + end.slice(1)}`, value: bow },
+                            { path: 'navigation.racing.startLineLength', value: newStartLine.length },
+                        ]);
+
+                        processPosition(position);
+                    } else {
+                        findLineAndThenProcess(position, true);
+                    }
+                } catch (err) {
+                    app.error('Failed to set start line end:', err);
+                    res.status(500).json({ error: 'Failed to set start line end' });
                 }
-
-                if (!position) {
-                    res.status(400).send({error: 'No valid position available'});
-                    return;
-                }
-
-                // TODO create or modify a waypoint that is named options.startLinePort or options.startLineStb
-                //      the start line itself will be set when this plugin notices the deltas for those waypoints updates.
-
-                res.json({
-                    message: 'OK'
-                });
             }
 
             function findLineAndThenProcess(position, alwaysFindLine = false) {
@@ -247,7 +296,6 @@ module.exports = (app) => {
                             app.debug(`STARTLINE: startLinePort: ${JSON.stringify(startLine)}`);
                             state.startLine = startLine;
                         } else {
-                            // TODO save a partial line, so the API can be used to complete the line.
                             app.debug(`STARTLINE: undefined`);
                             state.startLine = null;
                         }
@@ -535,7 +583,7 @@ module.exports = (app) => {
         registerWithRouter: (router) => {
             router.get('/startline/port', (req, res) => res.json(state.startLine ? state.startLine.port : null));
             router.get('/startline/stb', (req, res) => res.json(state.startLine ? state.startLine.stb : null));
-            router.post('/startline/:end', (req, res) => { plugin.setStartLineEnd(req, res); });
+            router.put('/startline/:end', plugin.setStartLineEnd);
         },
 
         getOpenApi: () => require('./openapi.json'),

@@ -10,17 +10,17 @@ GitHub repository: [https://github.com/gregw/signalk-racer](https://github.com/g
 
 This plugin calculates and publishes the following Signal K paths:
 
-| Path                                        | Description                                            | Units   | Schema |
-|---------------------------------------------|--------------------------------------------------------|---------|--------|
-| `navigation.racing.`<br/>`distanceStartline`       | Signed minimum distance from the bow to the start line | `m`     | Y      |
-| `navigation.racing.`<br/>`startLineLength`         | Total length of the start line                         | `m`     |        |
-| `navigation.racing.`<br/>`stbLineBias`             | Bias of the start line toward the starboard end        | `m`     |        |
-| `navigation.racing.`<br/>`startLinePort.latitude`  | Latitude of the port (pin) end of the start line       | `deg`   | Y      |
-| `navigation.racing.`<br/>`startLinePort.longitude` | Longitude of the port end                              | `deg`   | Y      |
-| `navigation.racing.`<br/>`startLineStb.latitude`   | Latitude of the starboard (boat) end of the start line | `deg`   | Y      |
-| `navigation.racing.`<br/>`startLineStb.longitude`  | Longitude of the starboard end                         | `deg`   | Y      |
-| `navigation.racing.`<br/>`nextLegHeading`          | True heading for the next leg of the course            | `deg`   |        |
-| `navigation.racing.`<br/>`nextLegTWA`              | True Wind Angle for the next leg of the course         | `deg`   |        |
+| Path                                        | Description                                             | Units   | Schema |
+|---------------------------------------------|---------------------------------------------------------|---------|--------|
+| `navigation.racing.`<br/>`distanceStartline`       | Signed minimum distance from the bow to the start line  | `m`     | Y      |
+| `navigation.racing.`<br/>`startLineLength`         | Total length of the start line                          | `m`     |        |
+| `navigation.racing.`<br/>`stbLineBias`             | Bias of the start line toward the starboard end         | `m`     |        |
+| `navigation.racing.`<br/>`startLinePort.latitude`  | Latitude of the port (pin) end of the start line        | `deg`   | Y      |
+| `navigation.racing.`<br/>`startLinePort.longitude` | Longitude of the port (pin) end of the start line       | `deg`   | Y      |
+| `navigation.racing.`<br/>`startLineStb.latitude`   | Latitude of the starboard (boat) end of the start line  | `deg`   | Y      |
+| `navigation.racing.`<br/>`startLineStb.longitude`  | Longitude of the starboard (boat) end of the start line | `deg`   | Y      |
+| `navigation.racing.`<br/>`nextLegHeading`          | True heading for the next leg of the course             | `deg`   |        |
+| `navigation.racing.`<br/>`nextLegTWA`              | True Wind Angle for the next leg of the course          | `deg`   |        |
 
 These values can be displayed in KIP, Freeboard-SK, or other Signal K clients.
 
@@ -91,23 +91,13 @@ The plugin supports **partial line configuration**: you can set just one end (po
 
 ### 📮 API Endpoints
 
-| Method | Endpoint                               | Description                                      |
-|--------|----------------------------------------|--------------------------------------------------|
-| `GET`  | `/plugins/signalk-racer/startline/port` | Get the last known **port** end position    |
-| `POST` | `/plugins/signalk-racer/startline/port` | Set the **port (pin)** end of the start line     |
-| `GET`  | `/plugins/signalk-racer/startline/stb` | Get the last known **starboard** end position |
-| `POST` | `/plugins/signalk-racer/startline/stb` | Set the **starboard (boat)** end of the line     |
+| Method | Endpoint                                 | Description                                                                                          |
+|--------|------------------------------------------|------------------------------------------------------------------------------------------------------|
+| `GET`  | `/plugins/signalk-racer/startline/port`  | Get the last known **port (pin)** end position                                                       |
+| `PUT`  | `/plugins/signalk-racer/startline/port`  | Set the **port (pin)** end of the start line to the current position of the boat plus the bow offset |
+| `GET`  | `/plugins/signalk-racer/startline/stb`   | Get the last known **starboard (boat)** end position                                                 |
+| `PUT`  | `/plugins/signalk-racer/startline/stb`   | Set the **starboard (boat)** end of the line to the current position of the boat plus the bow offset |
 
-### 🧾 POST Body Format (Optional)
-
-If a position is provided in the POST body, it should be:
-
-```json
-{
-  "latitude": -33.8,
-  "longitude": 151.2
-}
-```
 
 ## 🔄 Dependencies
 
