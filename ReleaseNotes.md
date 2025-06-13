@@ -5,3 +5,5 @@
 ## 0.9.2 Set Start Line
 + Added API to set the start line
 + Added webapp to call start line API
+## 0.9.3 KIP racer-timer integration
+ + added timeToStart API

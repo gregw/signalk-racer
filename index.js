@@ -93,7 +93,7 @@ module.exports = (app) => {
     const plugin = {
         id: 'signalk-racer',
         name: 'SignalK Racing Plugin',
-        start: (options, restartPlugin) => {
+        start: (options) => {
             if (!options.startLinePort || !options.startLineStb) {
                 app.error('Missing waypoint names: startLinePort and/or startLineStb not configured.');
                 return;
@@ -176,6 +176,32 @@ module.exports = (app) => {
                     bow = geolib.computeDestinationPoint(bow, state.gpsFromCenter, headingTrue + 90);
                 app.debug('bowPosition:' + JSON.stringify(bow));
                 return bow;
+            }
+
+            plugin.setTimeToStart = async (req, res) => {
+                try {
+                    const body = req.body;
+                    if (!body || typeof body.timeToStart !== 'number') {
+                        res.status(400).json({ error: 'Missing or invalid `timeToStart`' });
+                        return;
+                    }
+
+                    const timeToStart = body.timeToStart; // value in seconds, or whatever unit you agree on
+                    app.debug(`Setting timeToStart to ${timeToStart}`);
+
+                    sendDeltas([
+                        {path: 'navigation.racing.timeToStart', value: timeToStart},
+                    ]);
+
+                    res.json({
+                        message: 'OK',
+                        timeToStart,
+                        distanceToLine: state.distanceToLine ? state.distanceToLine : null,
+                    });
+                } catch (err) {
+                    app.error('Failed to set time to start:', err);
+                    res.status(500).json({ error: 'Failed to set time to start' });
+                }
             }
 
             plugin.setStartLineEnd = async (req, res) => {
@@ -584,6 +610,7 @@ module.exports = (app) => {
             router.get('/startline/port', (req, res) => res.json(state.startLine ? state.startLine.port : null));
             router.get('/startline/stb', (req, res) => res.json(state.startLine ? state.startLine.stb : null));
             router.put('/startline/:end', plugin.setStartLineEnd);
+            router.put('/timeToStart', plugin.setTimeToStart);
         },
 
         getOpenApi: () => require('./openapi.json'),

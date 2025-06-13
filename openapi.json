@@ -8,13 +8,14 @@
       "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
     }
   },
-
   "paths": {
     "/startline/port": {
       "get": {
         "summary": "Set the port end of the start line",
         "responses": {
-          "200": { "description": "Port end set" }
+          "200": {
+            "description": "Port end set"
+          }
         }
       }
     },
@@ -23,7 +24,58 @@
         "summary": "Set the starboard end of the start line",
         "description": "Set the starboard end of the start line to the boats position plus the bow offset.",
         "responses": {
-          "200": { "description": "Starboard end set" }
+          "200": {
+            "description": "Starboard end set"
+          }
+        }
+      }
+    },
+    "/timeToStart": {
+      "put": {
+        "summary": "Set time to start",
+        "description": "Update the countdown timer value used for start line calculations.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "timeToStart": {
+                    "type": "number",
+                    "description": "Time to start in seconds"
+                  }
+                },
+                "required": [
+                  "timeToStart"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Time to start set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string" },
+                    "timeToStart": {
+                      "type": "number",
+                      "description": "Time to start in seconds"
+                    },
+                    "distanceToLine": {
+                      "type": "number",
+                      "description": "Distance to the line in meters"
+                    }
+                  },
+                  "required": ["message", "timeToStart"]
+                }
+              }
+            }
+          }
         }
       }
     }

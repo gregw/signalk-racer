@@ -91,12 +91,13 @@ The plugin supports **partial line configuration**: you can set just one end (po
 
 ### 📮 API Endpoints
 
-| Method | Endpoint                                 | Description                                                                                          |
-|--------|------------------------------------------|------------------------------------------------------------------------------------------------------|
-| `GET`  | `/plugins/signalk-racer/startline/port`  | Get the last known **port (pin)** end position                                                       |
-| `PUT`  | `/plugins/signalk-racer/startline/port`  | Set the **port (pin)** end of the start line to the current position of the boat plus the bow offset |
-| `GET`  | `/plugins/signalk-racer/startline/stb`   | Get the last known **starboard (boat)** end position                                                 |
-| `PUT`  | `/plugins/signalk-racer/startline/stb`   | Set the **starboard (boat)** end of the line to the current position of the boat plus the bow offset |
+| Method | Endpoint                                | Description                                                                                          |
+|--------|-----------------------------------------|------------------------------------------------------------------------------------------------------|
+| `GET`  | `/plugins/signalk-racer/startline/port` | Get the last known **port (pin)** end position                                                       |
+| `PUT`  | `/plugins/signalk-racer/startline/port` | Set the **port (pin)** end of the start line to the current position of the boat plus the bow offset |
+| `GET`  | `/plugins/signalk-racer/startline/stb`  | Get the last known **starboard (boat)** end position                                                 |
+| `PUT`  | `/plugins/signalk-racer/startline/stb`  | Set the **starboard (boat)** end of the line to the current position of the boat plus the bow offset |
+| `PUT`  | `/plugins/signalk-racer/timeToStart`    | Set the **timeToStart** in seconds and receive the current **distanceToLine**                        |
 
 
 ## 🔄 Dependencies
