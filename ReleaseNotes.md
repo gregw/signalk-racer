@@ -9,3 +9,5 @@
  + added timeToStart API
 ## 0.9.4 Trivial rename
  + Renamed README.md for npmjs
+## 0.9.5 Restructured
+ + Restructured the plugin to avoid initialization problem in new server
