@@ -7,3 +7,5 @@
 + Added webapp to call start line API
 ## 0.9.3 KIP racer-timer integration
  + added timeToStart API
+## 0.9.4 Trivial rename
+ + Renamed README.md for npmjs
