@@ -159,11 +159,11 @@ module.exports = (app) => {
         return bow;
     }
 
-    async function setTimeToStart(req, res) {
+    async function setTimeToStartV1(req, res) {
         try {
             const body = req.body;
             if (!body || typeof body.timeToStart !== 'number') {
-                res.status(400).json({ error: 'Missing or invalid `timeToStart`' });
+                res.status(400).json({error: 'Missing or invalid `timeToStart`'});
                 return;
             }
 
@@ -174,93 +174,121 @@ module.exports = (app) => {
                 {path: 'navigation.racing.timeToStart', value: timeToStart},
             ]);
 
-            res.json({
+            res.status(200).json({
                 message: 'OK',
                 timeToStart,
                 distanceToLine: state.distanceToLine ? state.distanceToLine : null,
             });
         } catch (err) {
             app.error('Failed to set time to start:', err);
-            res.status(500).json({ error: 'Failed to set time to start' });
+            res.status(500).json({error: 'Failed to set time to start'});
         }
     }
 
-    async function setStartLineEnd(req, res) {
+    function setTimeToStartV2(context, path, value, cb) {
+        sendDeltas([
+            {path: 'navigation.racing.timeToStart', value: value},
+        ]);
+
+        cb(null, {
+            state: 'COMPLETED',
+            result: {
+                distanceToStart: state.distanceToLine ? state.distanceToLine : null,
+            }
+        });
+    }
+
+    async function setStartLineEndV1(req, res) {
         try {
             const end = req.params.end;  // "port" or "stb"
             if (end !== 'port' && end !== 'stb') {
                 res.status(400).send({error: 'End must be "port" or "stb"'});
                 return;
             }
+            setStartLineEnd(end, null);
+            res.status(200).json({ message: 'OK' });
+        } catch (err) {
+            app.error('Failed to set start line end V1:', err);
+            res.status(500).json({error: 'Failed to set start line end'});
+        }
+    }
 
-            let position = app.getSelfPath('navigation.position');
+    async function setLineStartV2(end, context, path, value, cb) {
+        try {
+            setStartLineEnd(end, value);
+            cb(null, {
+                state: 'COMPLETED',
+                result: {
+                    distanceToStart: state.distanceToLine ? state.distanceToLine : null,
+                }
+            });
+        } catch (err) {
+            app.error('Failed to set start line end V2:', err);
+            cb(null, {state: 'FAILED'});
+        }
+    }
+
+    async function setStartLineEnd(end, position) {
+        if (!position || !position.latitude || !position.longitude) {
+            position = app.getSelfPath('navigation.position');
             if (position)
                 position = position.value;
-            else {
-                res.status(500).send({error: 'No valid position available'});
-                return;
-            }
-            const bow = bowPosition(position);
-            const startLine = state.startLine;
-            const waypointName = state.options[`startLine${end.charAt(0).toUpperCase() + end.slice(1)}`];
+        }
+        if (!position) {
+            throw new Error('Unknown position');
+        }
+        const bow = bowPosition(position);
+        const startLine = state.startLine;
+        const waypointName = state.options[`startLine${end.charAt(0).toUpperCase() + end.slice(1)}`];
 
-            let waypointId = startLine ? startLine[end + 'Id'] : null;
-            if (!waypointId) {
-                // Get the ID of the last existing waypoint with the given name.
-                const waypoints = await app.resourcesApi.listResources('waypoints', {});
-                for (const [id, resource] of Object.entries(waypoints)) {
-                    if (resource.name === waypointName) {
-                        waypointId = id;
-                        // don't break here as we want the last waypoint with the given name
-                    }
+        let waypointId = startLine ? startLine[end + 'Id'] : null;
+        if (!waypointId) {
+            // Get the ID of the last existing waypoint with the given name.
+            const waypoints = await app.resourcesApi.listResources('waypoints', {});
+            for (const [id, resource] of Object.entries(waypoints)) {
+                if (resource.name === waypointName) {
+                    waypointId = id;
+                    // don't break here as we want the last waypoint with the given name
                 }
             }
+        }
 
-            app.debug(`POSITION to set ${end}(${waypointName}/${waypointId}): ${JSON.stringify(bow)}`);
+        app.debug(`POSITION to set ${end}(${waypointName}/${waypointId}): ${JSON.stringify(bow)}`);
 
-            const waypoint = {
-                name: waypointName,
-                feature: {
-                    type: 'Feature',
-                    geometry: {
-                        type: 'Point',
-                        coordinates: [bow.longitude, bow.latitude]
-                    },
-                    properties: {}
-                }
+        const waypoint = {
+            name: waypointName,
+            feature: {
+                type: 'Feature',
+                geometry: {
+                    type: 'Point',
+                    coordinates: [bow.longitude, bow.latitude]
+                },
+                properties: {}
             }
+        }
 
-            app.debug(`waypoint: ${waypointId} -> ${end}/${waypointName} : ${JSON.stringify(waypoint)}`);
+        app.debug(`waypoint: ${waypointId} -> ${end}/${waypointName} : ${JSON.stringify(waypoint)}`);
 
-            if (waypointId)
-                await app.resourcesApi.setResource('waypoints', waypointId, waypoint);
-            else
-                await app.resourcesApi.createResource('waypoints', waypoint);
+        if (waypointId)
+            await app.resourcesApi.setResource('waypoints', waypointId, waypoint);
+        else
+            await app.resourcesApi.createResource('waypoints', waypoint);
 
-            res.json({
-                message: 'OK'
-            });
+        if (startLine) {
+            const newStartLine = {...state.startLine};
+            newStartLine[end + 'Id'] = waypointId;
+            newStartLine[end] = bow;
+            startLine.length = geolib.getPreciseDistance(newStartLine.port, newStartLine.stb, 0.1);
+            startLine.bearing = geolib.getRhumbLineBearing(newStartLine.stb, newStartLine.port);
+            state.startLine = newStartLine;
+            sendDeltas([
+                {path: `navigation.racing.startLine${end.charAt(0).toUpperCase() + end.slice(1)}`, value: bow},
+                {path: 'navigation.racing.startLineLength', value: newStartLine.length},
+            ]);
 
-            if (startLine)
-            {
-                const newStartLine = { ...state.startLine };
-                newStartLine[end + 'Id'] = waypointId;
-                newStartLine[end] = bow;
-                startLine.length = geolib.getPreciseDistance(newStartLine.port, newStartLine.stb, 0.1);
-                startLine.bearing = geolib.getRhumbLineBearing(newStartLine.stb, newStartLine.port);
-                state.startLine = newStartLine;
-                sendDeltas([
-                    { path: `navigation.racing.startLine${end.charAt(0).toUpperCase() + end.slice(1)}`, value: bow },
-                    { path: 'navigation.racing.startLineLength', value: newStartLine.length },
-                ]);
-
-                processPosition(position);
-            } else {
-                findLineAndThenProcess(position, true);
-            }
-        } catch (err) {
-            app.error('Failed to set start line end:', err);
-            res.status(500).json({ error: 'Failed to set start line end' });
+            processPosition(position);
+        } else {
+            findLineAndThenProcess(position, true);
         }
     }
 
@@ -598,20 +626,29 @@ module.exports = (app) => {
                         processRoute(route);
                 }
             );
+
+            app.registerPutHandler('vessels.self', 'navigation.racing.timeToStart', setTimeToStartV2)
+            app.registerPutHandler('vessels.self', 'navigation.racing.startLinePort', (context, path, value, cb) => setStartLine('Port', context, path, value, cb));
+            app.registerPutHandler('vessels.self', 'navigation.racing.startLineStb', (context, path, value, cb) => setStartLine('Stb', context, path, value, cb));
         },
 
         stop: () => {
             unsubscribes.forEach((f) => f());
             unsubscribes.length = 0;
+
+            app.unregisterPutHandler('vessels.self', 'navigation.racing.timeToStart');
+            app.unregisterPutHandler('vessels.self', 'navigation.racing.startLinePort');
+            app.unregisterPutHandler('vessels.self', 'navigation.racing.startLineStb');
         },
 
         schema: () => racerSchema,
 
         registerWithRouter: (router) => {
+            // Set V1 API endpoints
             router.get('/startline/port', (req, res) => res.json(state.startLine ? state.startLine.port : null));
             router.get('/startline/stb', (req, res) => res.json(state.startLine ? state.startLine.stb : null));
-            router.put('/startline/:end', setStartLineEnd);
-            router.put('/timeToStart', setTimeToStart);
+            router.put('/startline/:end', setStartLineEndV1);
+            router.put('/timeToStart', setTimeToStartV1);
         },
 
         getOpenApi: () => require('./openapi.json'),

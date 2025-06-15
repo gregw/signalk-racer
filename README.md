@@ -83,21 +83,51 @@ If `navigation.headingTrue` is not available, then `navigation.courseOverGroundT
 
 ---
 
-## 🌐 Start Line REST API
+## 🌐 API Access
 
-The plugin provides a REST API that allows external clients (e.g. KIP dashboards, mobile apps, or scripts) to **set or query the start line ends**. This can be used to "ping" the boat or pin end by calling a simple HTTP POST with or without a position.
+The Signal K Racer Plugin supports two API styles:
 
-The plugin supports **partial line configuration**: you can set just one end (port or starboard), and it will store and emit that end's position immediately. Once both ends are defined, the full line geometry (length, bearing, bias) will be calculated.
+### 🧭 V1 REST API (Express-style)
 
-### 📮 API Endpoints
+These endpoints are accessible via HTTP and are suitable for use in simple scripts, dashboards, or forms. They are mounted under:
 
-| Method | Endpoint                                | Description                                                                                          |
-|--------|-----------------------------------------|------------------------------------------------------------------------------------------------------|
-| `GET`  | `/plugins/signalk-racer/startline/port` | Get the last known **port (pin)** end position                                                       |
-| `PUT`  | `/plugins/signalk-racer/startline/port` | Set the **port (pin)** end of the start line to the current position of the boat plus the bow offset |
-| `GET`  | `/plugins/signalk-racer/startline/stb`  | Get the last known **starboard (boat)** end position                                                 |
-| `PUT`  | `/plugins/signalk-racer/startline/stb`  | Set the **starboard (boat)** end of the line to the current position of the boat plus the bow offset |
-| `PUT`  | `/plugins/signalk-racer/timeToStart`    | Set the **timeToStart** in seconds and receive the current **distanceToLine**                        |
+```
+/plugins/signalk-racer/
+```
+
+| Method | Endpoint            | Description                                                                                  |
+|--------|---------------------|----------------------------------------------------------------------------------------------|
+| `GET`  | `/startline/port`   | Get the last known **port (pin)** end position                                               |
+| `PUT`  | `/startline/port`   | Set the **port (pin)** end of the start line to the boat’s current position plus bow offset  |
+| `GET`  | `/startline/stb`    | Get the last known **starboard (boat)** end position                                         |
+| `PUT`  | `/startline/stb`    | Set the **starboard (boat)** end to the current boat position plus bow offset                |
+| `PUT`  | `/timeToStart`      | Set the **timeToStart** (in seconds). Response includes the current **distanceToLine**       |
+
+These routes use traditional Express `req`/`res` handling and are implemented via `registerWithRouter()`.
+
+---
+
+### 🛰 V2 Signal K PUT API (Path-based)
+
+These API calls operate on **Signal K model paths**.
+
+To use these, send an HTTP `PUT` to:
+
+```
+/signalk/v1/api/vessels/self/<path>
+```
+
+---
+
+### 🧠 When to Use Which
+
+| Use Case                        | Recommended API |
+|----------------------------------|------------------|
+| Calling from JavaScript or UI    | V2 (Signal K PUT) |
+| Using curl / simple HTTP tools   | V1 (REST/Express) |
+| Integrating with Signal K clients| V2               |
+| Custom dashboards (e.g. KIP)     | Both supported    |
+
 
 
 ## 🔄 Dependencies
