@@ -13,4 +13,6 @@
  + Restructured the plugin to avoid initialization problem in new server
 ## 0.9.6 V2 API
  + Added new API V2 methods
- + Server side timer
+ + Removed V1 methods
+ + Webapp uses websocket
+ + TODO Server side timer 

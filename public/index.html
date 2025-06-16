@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>SignalK Racer</title>
+    <title>SignalK Racer Control</title>
     <style>
         body {
             font-family: sans-serif;
@@ -24,30 +24,102 @@
     </style>
 </head>
 <body>
-<h1>Set Start Line Ends</h1>
-<div id="buttons">
-  <button onclick="setEnd('port')">Set Port End (Pin)</button><button onclick="setEnd('stb')">Set Starboard End (Boat)</button>
+<h1>Set Start Line Ends via WebSocket</h1>
+<div>
+    <button onclick="setEnd('setStartLinePort')">Port<br/>(Pin)</button>
+    <label>----- <input id="lineLength" readonly style="width: 5em; text-align: center;">(m) -----</label>
+    <button onclick="setEnd('setStartLineStb')">Starboard<br/>(Boat)</button>
 </div>
-<div id="status"></div>
+
+<div>
+    <label>Line Bias (m): <input id="lineBias" readonly style="width: 5em; text-align: center;"></label>
+</div>
+<div id="status">Connecting...</div>
+
 
 <script>
-    async function setEnd(end) {
-        const url = `/plugins/signalk-racer/startline/${end}`;
-        document.getElementById('status').textContent = `Sending request to ${url}...`;
+    const status = document.getElementById('status');
+    let socket;
+    let statusTimer
 
-        try {
-            const res = await fetch(url, { method: 'PUT' });
-            if (res.ok) {
-                const data = await res.json();
-                document.getElementById('status').textContent = `✅ ${end.toUpperCase()} set at bow position.`;
-            } else {
-                const err = await res.text();
-                throw new Error(`Error ${res.status}: ${err}`);
+    function updateStatus(message) {
+        status.textContent = message;
+        if (statusTimer)
+            clearTimeout(statusTimer);
+        statusTimer = setTimeout(() => {
+            if (status.textContent === message) {
+                status.textContent = '';
             }
-        } catch (e) {
-            document.getElementById('status').textContent = `❌ Failed: ${e.message}`;
-        }
+        }, 10000);
     }
+
+    function connectWebSocket() {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const socketUrl = protocol + '//' + window.location.host + '/signalk/v1/stream?subscribe=none';
+        socket = new WebSocket(socketUrl);
+
+        socket.onopen = () => {
+            updateStatus('✅ Connected to Signal K server');
+            socket.send(JSON.stringify({
+                context: "vessels.self",
+                subscribe: [
+                    {
+                        path: "navigation.racing.*",
+                        policy: "instant"
+                    }
+                ]
+            }));
+        };
+
+        socket.onerror = (err) => {
+            updateStatus('❌ WebSocket error: ' + err.message);
+        };
+
+        socket.onclose = () => {
+            updateStatus('❌ Disconnected. Retrying in 5s...');
+            setTimeout(connectWebSocket, 5000);
+        };
+
+        socket.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+
+            if (data.updates) {
+                data.updates.forEach(update => {
+                    if (update.values) {
+                        update.values.forEach(value => {
+                            if (value.path === "navigation.racing.startLineLength") {
+                                document.getElementById("lineLength").value = value.value.toFixed(1);
+                            } else if (value.path === "navigation.racing.stbLineBias") {
+                                document.getElementById("lineBias").value = value.value.toFixed(1);
+                            } else {
+                                console.log("Received value: " + value.path + " = " + JSON.stringify(value.value));
+                            }
+                        });
+                    }
+                });
+            }
+        };
+    }
+
+    function setEnd(pathSuffix) {
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            updateStatus('❌ WebSocket not connected.');
+            return;
+        }
+
+        const command = {
+            context: 'vessels.self',
+            put: {
+                path: 'navigation.racing.' + pathSuffix,
+                value: {}
+            }
+        };
+
+        socket.send(JSON.stringify(command));
+        updateStatus(`⏳ Sent request to set ${pathSuffix}`);
+    }
+
+    connectWebSocket();
 </script>
 </body>
 </html>
