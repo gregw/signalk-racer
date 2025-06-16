@@ -127,6 +127,9 @@
                                 document.getElementById("lineLength").value = value.value.toFixed(1);
                             } else if (value.path === "navigation.racing.stbLineBias") {
                                 document.getElementById("lineBias").value = value.value.toFixed(1);
+                            } else if (value.path === "navigation.racing.timeToStart") {
+                                timeToStart = value.value;
+                                updateTimerDisplay();
                             } else {
                                 console.log("Received value: " + value.path + " = " + JSON.stringify(value.value));
                             }
@@ -168,6 +171,110 @@
     }
 
     connectWebSocket();
+
+    let timeToStart = null;
+
+    function formatTimeToMMSS(seconds) {
+        const mm = Math.floor(seconds / 60);
+        const ss = Math.floor(seconds % 60);
+        return `${mm.toString().padStart(2, '0')}:${ss.toString().padStart(2, '0')}`;
+    }
+
+    function formatTimeToHHMMSS(date) {
+        return date.toTimeString().split(' ')[0];
+    }
+
+    function updateTimerDisplay() {
+        if (timeToStart !== null) {
+            document.getElementById('timeDisplay').textContent = formatTimeToMMSS(timeToStart);
+            const futureTime = new Date(Date.now() + timeToStart * 1000);
+            const input = document.getElementById('startTimeInput');
+            if (input !== document.activeElement) {
+                input.value = formatTimeToHHMMSS(futureTime);
+            }
+        }
+    }
+
+    function adjustStartTime(deltaSeconds) {
+        if (timeToStart !== null) {
+            timeToStart += deltaSeconds;
+            sendTimeToStart(timeToStart);
+        }
+    }
+
+    function handleStartTimeKey(event) {
+        if (event.key === 'Enter') {
+            const parts = document.getElementById('startTimeInput').value.split(':');
+            if (parts.length === 3) {
+                const now = new Date();
+                const target = new Date();
+                target.setHours(parseInt(parts[0]), parseInt(parts[1]), parseInt(parts[2]), 0);
+                if (target < now) target.setTime(target.getTime() + 24 * 60 * 60 * 1000);  // roll over if needed
+                const delta = Math.round((target - now) / 1000);
+                sendTimeToStart(delta);
+            }
+        }
+    }
+
+    function sendTimeToStart(seconds) {
+        timeToStart = seconds;
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            updateStatus('❌ WebSocket not connected.');
+            return;
+        }
+        socket.send(JSON.stringify({
+            context: 'vessels.self',
+            put: {
+                path: 'navigation.racing.setTimeToStart',
+                value: seconds
+            }
+        }));
+        updateStatus(`⏳ Sent new timeToStart: ${seconds} sec`);
+    }
+
+    function sendTimerCommand(command) {
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            updateStatus('❌ WebSocket not connected.');
+            return;
+        }
+        socket.send(JSON.stringify({
+            context: 'vessels.self',
+            put: {
+                path: 'navigation.racing.timerCommand',
+                value: command
+            }
+        }));
+        updateStatus(`⏳ Sent timer command: ${command}`);
+    }
+
+    // Periodic update loop
+    setInterval(() => {
+        if (timeToStart !== null && timeToStart > 0) {
+            timeToStart--;
+            updateTimerDisplay();
+        }
+    }, 1000);
+
 </script>
+
+<!-- Timer Display -->
+<div style="margin-top: 2em;">
+    <div id="timeDisplay" style="font-size: 3em; font-weight: bold;">00:00</div>
+</div>
+
+<!-- Start Time Row -->
+<div style="margin-top: 1em; display: flex; justify-content: center; align-items: center; gap: 1em;">
+    <button class="button-move" onclick="adjustStartTime(-60)">-1 min</button>
+    <input id="startTimeInput" style="font-size: 1.5em; width: 10em; text-align: center;" onkeydown="handleStartTimeKey(event)">
+    <button class="button-move" onclick="adjustStartTime(60)">+1 min</button>
+</div>
+
+<!-- Timer Control Buttons -->
+<div style="margin-top: 1em;">
+    <button class="button-set" onclick="sendTimerCommand('start')">Start</button>
+    <button class="button-set" onclick="sendTimerCommand('sync')">Sync</button>
+    <button class="button-set" onclick="sendTimerCommand('reset')">Reset</button>
+</div>
+
 </body>
 </html>
