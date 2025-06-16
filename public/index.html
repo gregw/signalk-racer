@@ -265,7 +265,7 @@
 <!-- Start Time Row -->
 <div style="margin-top: 1em; display: flex; justify-content: center; align-items: center; gap: 1em;">
     <button class="button-move" onclick="adjustStartTime(-60)">-1 min</button>
-    <input id="startTimeInput" style="font-size: 1.5em; width: 10em; text-align: center;" onkeydown="handleStartTimeKey(event)">
+    <label for="startTimeInput">Start at: <input id="startTimeInput" style="font-size: 1.5em; width: 10em; text-align: center;" onkeydown="handleStartTimeKey(event)"></label>
     <button class="button-move" onclick="adjustStartTime(60)">+1 min</button>
 </div>
 
