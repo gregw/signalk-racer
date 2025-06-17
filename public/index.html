@@ -102,7 +102,7 @@
                             } else if (value.path === "navigation.racing.stbLineBias") {
                                 document.getElementById("lineBias").value = value.value.toFixed(1);
                             } else if (value.path === "navigation.racing.timeToStart") {
-                                document.getElementById('timeToStart').textContent = formatTimeToMMSS(timeToStart);
+                                document.getElementById('timeToStart').textContent = formatTimeToMMSS(value.value);
                             } else if (value.path === "navigation.racing.startTime") {
                                 document.getElementById('startTime').value = value.value;
                             } else {
@@ -165,7 +165,7 @@
         socket.send(JSON.stringify({
             context: 'vessels.self',
             put: {
-                path: 'navigation.racing.setStartTimer',
+                path: 'navigation.racing.setStartTime',
                 value: {
                     command: 'adjust',
                     delta: deltaSeconds
@@ -190,7 +190,7 @@
         socket.send(JSON.stringify({
             context: 'vessels.self',
             put: {
-                path: 'navigation.racing.setStartTimer',
+                path: 'navigation.racing.setStartTime',
                 value: {
                     command: 'set',
                     startTime
@@ -208,7 +208,7 @@
         socket.send(JSON.stringify({
             context: 'vessels.self',
             put: {
-                path: 'navigation.racing.setStartTimer',
+                path: 'navigation.racing.setStartTime',
                 value: { command }
             }
         }));

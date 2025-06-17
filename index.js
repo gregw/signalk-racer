@@ -2,7 +2,7 @@ module.exports = (app) => {
     const state = {};
     const geolib = require('geolib')
     const racerSchema = {
-        title: 'Set System Time with sudo',
+        title: 'Signalk Racer Configuration',
         type: 'object',
         properties: {
             startLineStb: {
@@ -267,7 +267,7 @@ module.exports = (app) => {
         }
     }
 
-    async function startTimerCommand(context, path, value, cb) {
+    async function startTimeCommand(context, path, value, cb) {
         // start / reset / sync
         try {
             app.debug('startTimerCommand:', JSON.stringify(value));
@@ -279,39 +279,134 @@ module.exports = (app) => {
 
             switch (command)
             {
-                case 'start' : {
-                    // TODO get the current time,
-                    //      add navigation.racing.timeToStart (if not set, use options.timer) seconds to it
-                    //      format as a signalk timestamp
-                    //      set timestamp as delta of navigation.racing.startTime
-                    //      set options.timer as delta of navigation.racing.timeToStart
-                    //      start a timer that will expire every second and decrement navigation.racing.timeToStart
+                case 'start': {
+                    const now = new Date();
+                    const timeToStart = state.timeToStart ?? state.options.timer ?? 300;
+                    const startTimestamp = new Date(now.getTime() + timeToStart * 1000).toISOString();
+
+                    state.timerRunning = true;
+                    state.startTime = startTimestamp;
+                    state.timeToStart = timeToStart;
+
+                    sendDeltas([
+                        {path: 'navigation.racing.startTime', value: startTimestamp},
+                        {path: 'navigation.racing.timeToStart', value: timeToStart}
+                    ]);
+
+                    if (state.timerInterval) clearInterval(state.timerInterval);
+                    state.timerInterval = setInterval(() => {
+                        if (!state.timerRunning || state.timeToStart <= 0) {
+                            clearInterval(state.timerInterval);
+                            return;
+                        }
+                        state.timeToStart--;
+                        sendDeltas([{path: 'navigation.racing.timeToStart', value: state.timeToStart}]);
+                    }, 1000);
+                    cb(null, {state: 'COMPLETED'});
                     break;
                 }
-                case 'reset' : {
-                    // TODO stop the timer
-                    //      set delta for navigation.racing.timeToStart to options.timer
-                    //      clear delta for navigation.racing.startTime
+                case 'reset': {
+                    state.timerRunning = false;
+                    state.timeToStart = state.options.timer ?? 300;
+                    if (state.timerInterval) clearInterval(state.timerInterval);
+
+                    sendDeltas([
+                        {path: 'navigation.racing.timeToStart', value: state.timeToStart},
+                        {path: 'navigation.racing.startTime', value: null}
+                    ]);
+                    cb(null, {state: 'COMPLETED'});
                     break;
                 }
-                case 'sync' : {
-                    // TODO if the timer is not running return
-                    //      look at the navigation.racing.timeToStart and round it up or down to the nearest minute
-                    //      recalculate and reformat navigation.racing.startTime
-                    //      set deltas for both timeToStart and startTime
+
+                case 'sync': {
+                    if (!state.timerRunning || state.timeToStart == null) {
+                        cb(null, { state: 'FAILED', message: 'Timer not running' });
+                        return;
+                    }
+
+                    const rounded = Math.round(state.timeToStart / 60) * 60;
+                    state.timeToStart = rounded;
+                    state.startTime = new Date(Date.now() + rounded * 1000).toISOString();
+
+                    sendDeltas([
+                        { path: 'navigation.racing.timeToStart', value: state.timeToStart },
+                        { path: 'navigation.racing.startTime', value: state.startTime }
+                    ]);
+                    cb(null, { state: 'COMPLETED' });
                     break;
                 }
-                case 'set' : {
-                    // TODO parse the value.startTime as a signalk timestamp, being forgiving with regards to timezone.
-                    //      if the time is in the past, stop the timer, set timeToStart to 0 an return
-                    //      calculate timeToStart and send delta for it and the startTime
+
+                case 'set': {
+                    const input = value.startTime;
+                    if (!input) {
+                        cb(null, { state: 'FAILED', message: 'Missing startTime' });
+                        return;
+                    }
+
+                    const inputTime = new Date(input);
+                    if (isNaN(inputTime)) {
+                        cb(null, { state: 'FAILED', message: 'Invalid startTime format' });
+                        return;
+                    }
+
+                    const now = new Date();
+                    const diff = Math.floor((inputTime - now) / 1000);
+
+                    if (diff <= 0) {
+                        state.timerRunning = false;
+                        state.timeToStart = 0;
+                        state.startTime = null;
+                        sendDeltas([
+                            { path: 'navigation.racing.timeToStart', value: 0 },
+                            { path: 'navigation.racing.startTime', value: null }
+                        ]);
+                        cb(null, { state: 'COMPLETED' });
+                        return;
+                    }
+
+                    state.timerRunning = true;
+                    state.timeToStart = diff;
+                    state.startTime = inputTime.toISOString();
+
+                    sendDeltas([
+                        { path: 'navigation.racing.timeToStart', value: state.timeToStart },
+                        { path: 'navigation.racing.startTime', value: state.startTime }
+                    ]);
+
+                    if (state.timerInterval) clearInterval(state.timerInterval);
+                    state.timerInterval = setInterval(() => {
+                        if (!state.timerRunning || state.timeToStart <= 0) {
+                            clearInterval(state.timerInterval);
+                            return;
+                        }
+                        state.timeToStart--;
+                        sendDeltas([{ path: 'navigation.racing.timeToStart', value: state.timeToStart }]);
+                    }, 1000);
+                    cb(null, { state: 'COMPLETED' });
                     break;
                 }
-                case 'adjust' : {
-                    // TODO apply the value.delta to adjust navigation.racing.timeToStart and navigation.racing.startTime
-                    //
+
+                case 'adjust': {
+                    const delta = Number(value.delta);
+                    if (isNaN(delta) || state.timeToStart == null || !state.startTime) {
+                        cb(null, { state: 'FAILED', message: 'Cannot adjust: invalid state or delta' });
+                        return;
+                    }
+
+                    state.timeToStart += delta;
+                    if (state.timeToStart < 0) state.timeToStart = 0;
+
+                    const adjustedStart = new Date(Date.now() + state.timeToStart * 1000).toISOString();
+                    state.startTime = adjustedStart;
+
+                    sendDeltas([
+                        { path: 'navigation.racing.timeToStart', value: state.timeToStart },
+                        { path: 'navigation.racing.startTime', value: adjustedStart }
+                    ]);
+                    cb(null, { state: 'COMPLETED' });
                     break;
                 }
+
                 default : {
                     app.error('Unknown command to start timer: ' + command);
                     cb(null, {state: 'FAILED'});
@@ -535,6 +630,9 @@ module.exports = (app) => {
             state.wayPointsScanned = false;
             state.gpsFromBow = fromBow ? fromBow.value : null;
             state.gpsFromCenter = fromCenter ? fromCenter.value : null;
+            state.timeToStart = options.timer;
+
+            sendDeltas([{path: 'navigation.racing.timeToStart', value: state.timeToStart}]);
 
             // Subscribe to position updates.
             app.subscriptionmanager.subscribe(
@@ -661,7 +759,7 @@ module.exports = (app) => {
             );
 
             app.registerPutHandler('vessels.self', 'navigation.racing.setStartLine', setStartLine);
-            app.registerPutHandler('vessels.self', 'navigation.racing.setStartTime', startTimerCommand);
+            app.registerPutHandler('vessels.self', 'navigation.racing.setStartTime', startTimeCommand);
         },
 
         stop: () => {
