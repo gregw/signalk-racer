@@ -141,7 +141,7 @@ module.exports = (app) => {
         return bow;
     }
 
-    function setTimeToStartV2(context, path, value, cb) {
+    function setTimeToStart(context, path, value, cb) {
         sendDeltas([
             {path: 'navigation.racing.timeToStart', value: value},
         ]);
@@ -154,54 +154,96 @@ module.exports = (app) => {
         });
     }
 
-    async function setStartLineV2(end, context, path, value, cb) {
+    function camelCase(name) {
+        return name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
+    }
+
+    async function setStartLine(context, path, value, cb) {
         try {
-            let position = value;
-            if (!position || !position.latitude || !position.longitude) {
-                position = app.getSelfPath('navigation.position');
-                if (position)
-                    position = position.value;
-            }
-            if (!position) {
-                app.error('Failed to set start line end V2: !position');
+            app.debug('setStartLine:', JSON.stringify(value));
+            if (!value || !value.end || typeof value.end !== 'string') {
+                app.error('Failed to set start line: !value.end');
                 cb(null, {state: 'FAILED'});
             }
-            const bow = bowPosition(position);
-            const startLine = state.startLine;
-            const waypointName = state.options[`startLine${end.charAt(0).toUpperCase() + end.slice(1)}`];
+            const end = value.end.toLowerCase();
+            if (end !== 'port' && end !== 'stb') {
+                app.error('Failed to set start line: unknown end');
+                cb(null, {state: 'FAILED'});
+            }
 
-            let waypointId = startLine ? startLine[end + 'Id'] : null;
-            if (!waypointId) {
-                // Get the ID of the last existing waypoint with the given name.
-                const waypoints = await app.resourcesApi.listResources('waypoints', {});
-                for (const [id, resource] of Object.entries(waypoints)) {
-                    if (resource.name === waypointName) {
-                        waypointId = id;
-                        // don't break here as we want the last waypoint with the given name
+            // Get the position either as arg or of the current bow postion
+            let position = value.position;
+            if (position === 'bow') {
+                position = app.getSelfPath('navigation.position');
+                if (position)
+                    position = bowPosition(position.value);
+            }
+
+            app.debug(`setStartLine[${end}] = ${JSON.stringify(position)} before translation/rotation`);
+            const startLine = state.startLine;
+
+            // Do any rotations or length changes
+            if (startLine && (value.delta || value.rotate)) {
+                app.debug(`setStartLine[${end}] translate ${value.delta} and rotate ${value.rotate} of ${JSON.stringify(startLine)}`);
+                const fixedEnd = startLine[end === 'port' ? 'stb' : 'port'];
+                const movingEnd = position ? position : startLine[end];
+                app.debug(`fixedEnd: ${JSON.stringify(fixedEnd)} movingEnd: ${JSON.stringify(movingEnd)}`);
+
+                const initialBearing = geolib.getRhumbLineBearing(fixedEnd, movingEnd);
+                const currentDistance = geolib.getDistance(fixedEnd, movingEnd);
+                app.debug(`initialBearing: ${initialBearing} currentDistance: ${currentDistance}`);
+
+                const newDistance = value.delta && typeof value.delta === 'number' ? (currentDistance + value.delta) : currentDistance;
+                const newBearing = value.rotate && typeof value.rotate === 'number'? (initialBearing + toDegrees(value.rotate)) : initialBearing;
+                app.debug(`newDistance: ${newDistance} newBearing: ${newBearing}`);
+
+                const newPosition = geolib.computeDestinationPoint(fixedEnd, newDistance, newBearing);
+                app.debug(`Moved/Rotated ${end} from ${JSON.stringify(position)} to ${JSON.stringify(newPosition)}`);
+                position = newPosition;
+            }
+
+            if (position) {
+                app.debug('position:' + JSON.stringify(position));
+                const waypointConfig =`startLine${camelCase(end)}`;
+                app.debug(`waypointConfig: ${waypointConfig}`);
+                const waypointName = state.options[waypointConfig];
+                app.debug(`waypointName: ${waypointName}`);
+                let waypointId = startLine ? startLine[end + 'Id'] : null;
+                app.debug(`waypointId: ${waypointId}`);
+
+                if (!waypointId) {
+                    // Get the ID of the last existing waypoint with the given name.
+                    const waypoints = await app.resourcesApi.listResources('waypoints', {});
+                    for (const [id, resource] of Object.entries(waypoints)) {
+                        if (resource.name === waypointName) {
+                            waypointId = id;
+                            // don't break here as we want the last waypoint with the given name
+                        }
+                    }
+                    app.debug(`waypointId: ${waypointId}`);
+                }
+
+                app.debug(`POSITION to set ${end}(${waypointName}/${waypointId}): ${JSON.stringify(position)}`);
+
+                const waypoint = {
+                    name: waypointName,
+                    feature: {
+                        type: 'Feature',
+                        geometry: {
+                            type: 'Point',
+                            coordinates: [position.longitude, position.latitude]
+                        },
+                        properties: {}
                     }
                 }
+
+                app.debug(`waypoint: ${waypointId} -> ${end}/${waypointName} : ${JSON.stringify(waypoint)}`);
+
+                if (waypointId)
+                    await app.resourcesApi.setResource('waypoints', waypointId, waypoint);
+                else
+                    await app.resourcesApi.createResource('waypoints', waypoint);
             }
-
-            app.debug(`POSITION to set ${end}(${waypointName}/${waypointId}): ${JSON.stringify(bow)}`);
-
-            const waypoint = {
-                name: waypointName,
-                feature: {
-                    type: 'Feature',
-                    geometry: {
-                        type: 'Point',
-                        coordinates: [bow.longitude, bow.latitude]
-                    },
-                    properties: {}
-                }
-            }
-
-            app.debug(`waypoint: ${waypointId} -> ${end}/${waypointName} : ${JSON.stringify(waypoint)}`);
-
-            if (waypointId)
-                await app.resourcesApi.setResource('waypoints', waypointId, waypoint);
-            else
-                await app.resourcesApi.createResource('waypoints', waypoint);
 
             cb(null, {
                 state: 'COMPLETED',
@@ -213,23 +255,28 @@ module.exports = (app) => {
             if (startLine) {
                 const newStartLine = {...state.startLine};
                 newStartLine[end + 'Id'] = waypointId;
-                newStartLine[end] = bow;
+                newStartLine[end] = position;
                 startLine.length = geolib.getPreciseDistance(newStartLine.port, newStartLine.stb, 0.1);
                 startLine.bearing = geolib.getRhumbLineBearing(newStartLine.stb, newStartLine.port);
                 state.startLine = newStartLine;
                 sendDeltas([
-                    {path: `navigation.racing.startLine${end.charAt(0).toUpperCase() + end.slice(1)}`, value: bow},
+                    {path: `navigation.racing.startLine${end.charAt(0).toUpperCase() + end.slice(1)}`, value: position},
                     {path: 'navigation.racing.startLineLength', value: newStartLine.length},
                 ]);
 
-                processPosition(position);
+                processPosition(null);
             } else {
-                findLineAndThenProcess(position, true);
+                findLineAndThenProcess(null, true);
             }
         } catch (err) {
-            app.error('Failed to set start line end V2:', err);
+            app.error('Failed to set start line end:', JSON.stringify(err));
             cb(null, {state: 'FAILED'});
+            throw err;
         }
+    }
+
+    async function setStartTime(context, path, value, cb) {
+
     }
 
     function findLineAndThenProcess(position, alwaysFindLine = false) {
@@ -567,18 +614,13 @@ module.exports = (app) => {
                 }
             );
 
-            app.registerPutHandler('vessels.self', 'navigation.racing.setTimeToStart', setTimeToStartV2)
-            app.registerPutHandler('vessels.self', 'navigation.racing.setStartLinePort', (context, path, value, cb) => setStartLineV2('Port', context, path, value, cb));
-            app.registerPutHandler('vessels.self', 'navigation.racing.setStartLineStb', (context, path, value, cb) => setStartLineV2('Stb', context, path, value, cb));
+            app.registerPutHandler('vessels.self', 'navigation.racing.setStartLine', setStartLine);
+            app.registerPutHandler('vessels.self', 'navigation.racing.setStartTime', setStartTime);
         },
 
         stop: () => {
             unsubscribes.forEach((f) => f());
             unsubscribes.length = 0;
-
-            app.unregisterPutHandler('vessels.self', 'navigation.racing.setTimeToStart');
-            app.unregisterPutHandler('vessels.self', 'navigation.racing.setStartLinePort');
-            app.unregisterPutHandler('vessels.self', 'navigation.racing.setStartLineStb');
         },
 
         schema: () => racerSchema,
