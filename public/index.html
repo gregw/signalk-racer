@@ -165,11 +165,14 @@
         socket.send(JSON.stringify({
             context: 'vessels.self',
             put: {
-                path: 'navigation.racing.setStartTime',
-                value: { delta: deltaSeconds }
+                path: 'navigation.racing.setStartTimer',
+                value: {
+                    command: 'adjust',
+                    delta: deltaSeconds
+                }
             }
         }));
-        updateStatus(`⏳ Sent delta timeToStart: ${seconds} sec`);
+        updateStatus(`⏳ Sent delta timeToStart: ${deltaSeconds} sec`);
     }
 
     function setStartTime(event) {
@@ -187,8 +190,11 @@
         socket.send(JSON.stringify({
             context: 'vessels.self',
             put: {
-                path: 'navigation.racing.setStartTime',
-                value: { startTime }
+                path: 'navigation.racing.setStartTimer',
+                value: {
+                    command: 'set',
+                    startTime
+                }
             }
         }));
         updateStatus(`⏳ Sent start time: ${startTime}`);

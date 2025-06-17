@@ -20,6 +20,11 @@ module.exports = (app) => {
                 title: 'Update period in micro seconds',
                 default: 1000
             },
+            timer: {
+                type: 'number',
+                title: 'Timer default period in seconds',
+                default: 300
+            },
         }
     }
 
@@ -139,19 +144,6 @@ module.exports = (app) => {
             bow = geolib.computeDestinationPoint(bow, state.gpsFromCenter, headingTrue + 90);
         app.debug('bowPosition:' + JSON.stringify(bow));
         return bow;
-    }
-
-    function setTimeToStart(context, path, value, cb) {
-        sendDeltas([
-            {path: 'navigation.racing.timeToStart', value: value},
-        ]);
-
-        cb(null, {
-            state: 'COMPLETED',
-            result: {
-                distanceToStart: state.distanceToLine ? state.distanceToLine : null,
-            }
-        });
     }
 
     function camelCase(name) {
@@ -275,8 +267,62 @@ module.exports = (app) => {
         }
     }
 
-    async function setStartTime(context, path, value, cb) {
+    async function startTimerCommand(context, path, value, cb) {
+        // start / reset / sync
+        try {
+            app.debug('startTimerCommand:', JSON.stringify(value));
+            if (!value || !value.command || typeof value.command !== 'string') {
+                app.error('Failed to command start timer: ' + JSON.stringify(value));
+                cb(null, {state: 'FAILED'});
+            }
+            const command = value.command.toLowerCase();
 
+            switch (command)
+            {
+                case 'start' : {
+                    // TODO get the current time,
+                    //      add navigation.racing.timeToStart (if not set, use options.timer) seconds to it
+                    //      format as a signalk timestamp
+                    //      set timestamp as delta of navigation.racing.startTime
+                    //      set options.timer as delta of navigation.racing.timeToStart
+                    //      start a timer that will expire every second and decrement navigation.racing.timeToStart
+                    break;
+                }
+                case 'reset' : {
+                    // TODO stop the timer
+                    //      set delta for navigation.racing.timeToStart to options.timer
+                    //      clear delta for navigation.racing.startTime
+                    break;
+                }
+                case 'sync' : {
+                    // TODO if the timer is not running return
+                    //      look at the navigation.racing.timeToStart and round it up or down to the nearest minute
+                    //      recalculate and reformat navigation.racing.startTime
+                    //      set deltas for both timeToStart and startTime
+                    break;
+                }
+                case 'set' : {
+                    // TODO parse the value.startTime as a signalk timestamp, being forgiving with regards to timezone.
+                    //      if the time is in the past, stop the timer, set timeToStart to 0 an return
+                    //      calculate timeToStart and send delta for it and the startTime
+                    break;
+                }
+                case 'adjust' : {
+                    // TODO apply the value.delta to adjust navigation.racing.timeToStart and navigation.racing.startTime
+                    //
+                    break;
+                }
+                default : {
+                    app.error('Unknown command to start timer: ' + command);
+                    cb(null, {state: 'FAILED'});
+                    return;
+                }
+            }
+        } catch (err) {
+            app.error('Failed to set start line end:', JSON.stringify(err));
+            cb(null, {state: 'FAILED'});
+            throw err;
+        }
     }
 
     function findLineAndThenProcess(position, alwaysFindLine = false) {
@@ -615,7 +661,7 @@ module.exports = (app) => {
             );
 
             app.registerPutHandler('vessels.self', 'navigation.racing.setStartLine', setStartLine);
-            app.registerPutHandler('vessels.self', 'navigation.racing.setStartTime', setStartTime);
+            app.registerPutHandler('vessels.self', 'navigation.racing.setStartTime', startTimerCommand);
         },
 
         stop: () => {
