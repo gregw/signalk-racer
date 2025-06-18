@@ -1,19 +1,9 @@
 {
-  "openapi": "3.0.0",
-  "info": {
-    "version": "0.9.5",
-    "title": "SignalK Racer Plugin v2 API",
-    "description": "Signal K plugin for racing functions: setting the start line and time to start via PUT operations on Signal K paths.",
-    "license": {
-      "name": "Apache 2.0",
-      "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
-    }
-  },
   "paths": {
-    "/signalk/v1/api/vessels/self/navigation/racing/timeToStart": {
+    "/signalk/v1/api/vessels/self/navigation/racing/setStartLine": {
       "put": {
-        "summary": "Set Time to Start",
-        "description": "Set the countdown time to the start line.",
+        "summary": "Set or Adjust Start Line End",
+        "description": "Set or adjust the port/stb end of the line. Provide `end`, optionally `position`, `delta`, and/or `rotate`.",
         "requestBody": {
           "required": true,
           "content": {
@@ -21,124 +11,61 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "value": {
-                    "type": "number",
-                    "description": "Time to start in seconds"
-                  }
+                  "end": { "type": "string", "enum": ["port", "stb"] },"position": {
+                    "oneOf": [
+                      { "type": "string", "enum": ["bow"] },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "latitude": { "type": "number" },
+                          "longitude": { "type": "number" }
+                        },
+                        "required": ["latitude", "longitude"]
+                      }
+                    ],
+                    "description": "Either the string 'bow', or an object with latitude/longitude"
+                  },
+                  "delta": { "type": "number", "description": "Distance in meters to move the end along line bearing" },
+                  "rotate": { "type": "number", "description": "Angle in radians to rotate end around the opposite end" }
                 },
-                "required": ["value"]
+                "required": ["end"]
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Time to start updated",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "state": { "type": "string" },
-                    "result": {
-                      "type": "object",
-                      "properties": {
-                        "distanceToStart": {
-                          "type": "number",
-                          "description": "Current calculated distance to the start line"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
+            "description": "Start line modified"
           }
         }
       }
     },
-    "/signalk/v1/api/vessels/self/navigation/racing/startLinePort": {
+    "/signalk/v1/api/vessels/self/navigation/racing/setStartTime": {
       "put": {
-        "summary": "Set Start Line Port End",
-        "description": "Set the port end of the start line to a given position or the current boat location.",
+        "summary": "Set, Adjust or Command the Timer",
+        "description": "Set start time or send commands to the timer ('start', 'reset', 'sync', or 'adjust').",
         "requestBody": {
-          "required": false,
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
                 "properties": {
-                  "latitude": { "type": "number" },
-                  "longitude": { "type": "number" }
-                }
+                  "command": {
+                    "type": "string",
+                    "enum": ["start", "reset", "sync", "adjust", "set"]
+                  },
+                  "delta": { "type": "number", "description": "Time offset in seconds (for adjust)" },
+                  "startTime": { "type": "string", "format": "date-time", "description": "ISO start time (for set)" }
+                },
+                "required": ["command"]
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Start line port end updated",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "state": { "type": "string" },
-                    "result": {
-                      "type": "object",
-                      "properties": {
-                        "distanceToStart": {
-                          "type": "number"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/signalk/v1/api/vessels/self/navigation/racing/startLineStb": {
-      "put": {
-        "summary": "Set Start Line Starboard End",
-        "description": "Set the starboard end of the start line to a given position or the current boat location.",
-        "requestBody": {
-          "required": false,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "latitude": { "type": "number" },
-                  "longitude": { "type": "number" }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Start line starboard end updated",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "state": { "type": "string" },
-                    "result": {
-                      "type": "object",
-                      "properties": {
-                        "distanceToStart": {
-                          "type": "number"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
+            "description": "Timer command executed"
           }
         }
       }

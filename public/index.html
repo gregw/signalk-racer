@@ -52,13 +52,14 @@
 <script>
     let socket;
     let statusTimer;
+    let startTime;
     function updateStatus(message) {
         const status = document.getElementById('status');
         status.textContent = message;
         if (statusTimer) clearTimeout(statusTimer);
         statusTimer = setTimeout(() => {
             if (status.textContent === message) {
-                status.textContent = ' ';
+                status.textContent = '-';
             }
         }, 10000);
     }
@@ -104,7 +105,17 @@
                             } else if (value.path === "navigation.racing.timeToStart") {
                                 document.getElementById('timeToStart').textContent = formatTimeToMMSS(value.value);
                             } else if (value.path === "navigation.racing.startTime") {
-                                document.getElementById('startTime').value = value.value;
+                                if (!value.value) {
+                                    document.getElementById('startTime').value = "HH:MM:SS";
+                                } else {
+                                    startTime = new Date(value.value); // handles ISO 8601 format
+                                    document.getElementById('startTime').value =
+                                        startTime.toLocaleTimeString([], {
+                                            hour: '2-digit',
+                                            minute: '2-digit',
+                                            second: '2-digit'
+                                        });
+                                }
                             } else {
                                 console.log("Received value: " + value.path + " = " + JSON.stringify(value.value));
                             }
@@ -175,17 +186,15 @@
         updateStatus(`⏳ Sent delta timeToStart: ${deltaSeconds} sec`);
     }
 
-    function setStartTime(event) {
-        if (event.key !== 'Enter') {
-            return;
-        }
-
+    function setStartTime() {
         if (!socket || socket.readyState !== WebSocket.OPEN) {
             updateStatus('❌ WebSocket not connected.');
             return;
         }
 
-        const startTime = document.getElementById('startTime').value;
+        const date = startTime ? new Date(startTime) : new Date();
+        const [hours, minutes, seconds] = document.getElementById('startTime').value.split(':').map(Number);
+        date.setHours(hours, minutes, seconds, 0);
 
         socket.send(JSON.stringify({
             context: 'vessels.self',
@@ -193,7 +202,7 @@
                 path: 'navigation.racing.setStartTime',
                 value: {
                     command: 'set',
-                    startTime
+                    startTime : date.toISOString(),
                 }
             }
         }));
@@ -227,49 +236,60 @@
 <h1>Adjust Start Line</h1>
 <div style="display: flex; justify-content: center; align-items: center; gap: 3em; flex-wrap: wrap;">
 
-    <!-- Port Control Cross -->
-    <div style="display: grid; grid-template-columns: repeat(5, auto); grid-template-rows: repeat(5, auto); gap: 0.5em;">
+
+    <div style="display: grid; grid-template-columns: repeat(11, auto); grid-template-rows: repeat(3, auto); gap: 0.5em;">
         <div></div>
         <div></div>
         <button class="port-rotate" onclick="sendAdjustStartLine('port', 0, 1)">+1°</button>
         <div></div>
         <div></div>
-        <button class="port-move" onclick="sendAdjustStartLine('port', 10, 0)">+10m</button>
-        <button class="port-tweak" onclick="sendAdjustStartLine('port', 1, 0)">+1m</button>
-        <button class="port-set" onclick="sendSetStartLine('port')">Set Port</button>
-        <button class="port-tweak" onclick="sendAdjustStartLine('port', -1, 0)">-1m</button>
-        <button class="port-move" onclick="sendAdjustStartLine('port', -10, 0)">-10m</button>
-        <div></div>
-        <div></div>
-        <button class="port-rotate" onclick="sendAdjustStartLine('port', 0, -1)">-1°</button>
-        <div></div>
-        <div></div>
-    </div>
 
-    <!-- Center Info -->
-    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
-        <label>Line Length (m): <input id="lineLength" readonly style="width: 5em; text-align: center;"></label>
-        <label>Line Bias (m): <input id="lineBias" readonly style="width: 5em; text-align: center;"></label>
-    </div>
+        <div></div>
 
-    <!-- Starboard Control Cross -->
-    <div style="display: grid; grid-template-columns: repeat(5, auto); grid-template-rows: repeat(5, auto); gap: 0.5em;">
         <div></div>
         <div></div>
         <button class="stb-rotate" onclick="sendAdjustStartLine('stb', 0, -1)">+1°</button>
         <div></div>
         <div></div>
+
+        <!--------->
+
+        <button class="port-move" onclick="sendAdjustStartLine('port', 10, 0)">+10m</button>
+        <button class="port-tweak" onclick="sendAdjustStartLine('port', 1, 0)">+1m</button>
+        <button class="port-set" onclick="sendSetStartLine('port')">Port<br/>(pin)</button>
+        <button class="port-tweak" onclick="sendAdjustStartLine('port', -1, 0)">-1m</button>
+        <button class="port-move" onclick="sendAdjustStartLine('port', -10, 0)">-10m</button>
+
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
+            ---------------<br/>
+            <label><input id="lineLength" readonly style="width: 5em; text-align: center;">(m)</label>
+        </div>
+
         <button class="stb-move" onclick="sendAdjustStartLine('stb', -10, 0)">-10m</button>
         <button class="stb-tweak" onclick="sendAdjustStartLine('stb', -1, 0)">-1m</button>
-        <button class="stb-set" onclick="sendSetStartLine('stb')">Set Starboard</button>
+        <button class="stb-set" onclick="sendSetStartLine('stb')">Starboard<br/>(boat)</button>
         <button class="stb-tweak" onclick="sendAdjustStartLine('stb', 1, 0)">+1m</button>
         <button class="stb-move" onclick="sendAdjustStartLine('stb', +10, 0)">+10m</button>
+
+        <!--------->
+
+        <div></div>
+        <div></div>
+        <button class="port-rotate" onclick="sendAdjustStartLine('port', 0, -1)">-1°</button>
+        <div></div>
+        <div></div>
+
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
+            <label>Bias: <input id="lineBias" readonly style="width: 5em; text-align: center;">(m)</label>
+        </div>
+
         <div></div>
         <div></div>
         <button class="stb-rotate" onclick="sendAdjustStartLine('stb', 0, 1)">-1°</button>
         <div></div>
         <div></div>
     </div>
+
 
 </div>
 
@@ -283,13 +303,16 @@
 <!-- Start Time Row -->
 <div style="margin-top: 1em; display: flex; justify-content: center; align-items: center; gap: 1em;">
     <button class="button-timer-adjust" onclick="adjustStartTime(-60)">-1 min</button>
-    <label for="startTime">Start at: <input id="startTime" style="font-size: 1.5em; width: 10em; text-align: center;" onkeydown="setStartTime()"></label>
+    <button class="button-timer-adjust" onclick="adjustStartTime(-1)">-1s</button>
+    <label for="startTime">Start at: <input id="startTime" style="font-size: 1.5em; width: 10em; text-align: center;"></label>
+    <button class="button-timer-adjust" onclick="adjustStartTime(1)">+1s</button>
     <button class="button-timer-adjust" onclick="adjustStartTime(60)">+1 min</button>
 </div>
 
 <!-- Timer Control Buttons -->
 <div style="margin-top: 1em;">
     <button class="button-timer-command" onclick="sendTimerCommand('start')">Start</button>
+    <button class="button-timer-command" onclick="setStartTime()">Start At</button>
     <button class="button-timer-command" onclick="sendTimerCommand('sync')">Sync</button>
     <button class="button-timer-command" onclick="sendTimerCommand('reset')">Reset</button>
 </div>

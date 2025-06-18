@@ -1,6 +1,6 @@
 # Signal K Racing Plugin
 
-This PROTOTYPPE plugin adds sail racing-relevant data calculations to a Signal K server. It focuses on real-time information useful during the start of a race, such as distance to the line, start line bias, and geographic position of the line ends.
+This PROTOTYPE plugin adds sail racing-relevant data calculations to a Signal K server. It focuses on real-time information useful during the start of a race, such as distance to the line, start line bias, and geographic position of the line ends.
 
 GitHub repository: [https://github.com/gregw/signalk-racer](https://github.com/gregw/signalk-racer)
 
@@ -10,17 +10,19 @@ GitHub repository: [https://github.com/gregw/signalk-racer](https://github.com/g
 
 This plugin calculates and publishes the following Signal K paths:
 
-| Path                                        | Description                                             | Units   | Schema |
-|---------------------------------------------|---------------------------------------------------------|---------|--------|
-| `navigation.racing.`<br/>`distanceStartline`       | Signed minimum distance from the bow to the start line  | `m`     | Y      |
-| `navigation.racing.`<br/>`startLineLength`         | Total length of the start line                          | `m`     |        |
-| `navigation.racing.`<br/>`stbLineBias`             | Bias of the start line toward the starboard end         | `m`     |        |
-| `navigation.racing.`<br/>`startLinePort.latitude`  | Latitude of the port (pin) end of the start line        | `deg`   | Y      |
-| `navigation.racing.`<br/>`startLinePort.longitude` | Longitude of the port (pin) end of the start line       | `deg`   | Y      |
-| `navigation.racing.`<br/>`startLineStb.latitude`   | Latitude of the starboard (boat) end of the start line  | `deg`   | Y      |
-| `navigation.racing.`<br/>`startLineStb.longitude`  | Longitude of the starboard (boat) end of the start line | `deg`   | Y      |
-| `navigation.racing.`<br/>`nextLegHeading`          | True heading for the next leg of the course             | `deg`   |        |
-| `navigation.racing.`<br/>`nextLegTWA`              | True Wind Angle for the next leg of the course          | `deg`   |        |
+| Path                                               | Description                                             | Units | Std |
+|----------------------------------------------------|---------------------------------------------------------|-------|-----|
+| `navigation.racing.`<br/>`distanceStartline`       | Signed minimum distance from the bow to the start line  | `m`   | Y   |
+| `navigation.racing.`<br/>`startLineLength`         | Total length of the start line                          | `m`   |     |
+| `navigation.racing.`<br/>`stbLineBias`             | Bias of the start line toward the starboard end         | `m`   |     |
+| `navigation.racing.`<br/>`startLinePort.latitude`  | Latitude of the port (pin) end of the start line        | `deg` | Y   |
+| `navigation.racing.`<br/>`startLinePort.longitude` | Longitude of the port (pin) end of the start line       | `deg` | Y   |
+| `navigation.racing.`<br/>`startLineStb.latitude`   | Latitude of the starboard (boat) end of the start line  | `deg` | Y   |
+| `navigation.racing.`<br/>`startLineStb.longitude`  | Longitude of the starboard (boat) end of the start line | `deg` | Y   |
+| `navigation.racing.`<br/>`nextLegHeading`          | True heading for the next leg of the course             | `deg` |     |
+| `navigation.racing.`<br/>`nextLegTWA`              | True Wind Angle for the next leg of the course          | `deg` |     |
+| `navigation.racing.`<br/>`timeToStart`             | Period of time until the race start                     | `s`   | Y   |
+| `navigation.racing.`<br/>`startTime`               | The start time as an ISO timestamp                      | `iso` |     |
 
 These values can be displayed in KIP, Freeboard-SK, or other Signal K clients.
 
@@ -28,18 +30,17 @@ These values can be displayed in KIP, Freeboard-SK, or other Signal K clients.
 
 ---
 
-
 ## ⚙️ Configuration
 
 You can configure the plugin via the Signal K web interface or by editing `settings.json` manually.
 
 ### Parameters:
 
-| Parameter          | Description                                                                           | Default       |
-|--------------------|---------------------------------------------------------------------------------------|---------------|
-| `startLineStb`     | Name of the waypoint for the starboard (committee boat) end of the line               | `"startBoat"` |
-| `startLinePort`    | Name of the waypoint for the port (pin) end of the line                               | `"startPin"`  |
-| `period`           | How often to update values (in milliseconds)                                          | `1000`        |
+| Parameter       | Description                                                              | Default       |
+|----------------|--------------------------------------------------------------------------|---------------|
+| `startLineStb`  | Name of the waypoint for the starboard (committee boat) end of the line | `"startBoat"` |
+| `startLinePort` | Name of the waypoint for the port (pin) end of the line                 | `"startPin"`  |
+| `period`        | How often to update values (in milliseconds)                            | `1000`        |
 
 ---
 
@@ -85,54 +86,46 @@ If `navigation.headingTrue` is not available, then `navigation.courseOverGroundT
 
 ## 🌐 API Access
 
-The Signal K Racer Plugin supports two API styles:
+This plugin uses WebSocket-based PUT requests to Signal K model paths.
 
-### 🧭 V1 REST API (Express-style)
+### `navigation.racing.setStartLine`
 
-These endpoints are accessible via HTTP and are suitable for use in simple scripts, dashboards, or forms. They are mounted under:
+Used to **set** or **adjust** either end of the start line.
 
+#### Payload:
+```json
+{
+  "end": "port" | "stb",             
+  "position": "bow" | { "latitude": ..., "longitude": ... },  
+  "delta": 10,                       
+  "rotate": 0.1                      
+}
 ```
-/plugins/signalk-racer/
-```
 
-| Method | Endpoint            | Description                                                                                  |
-|--------|---------------------|----------------------------------------------------------------------------------------------|
-| `GET`  | `/startline/port`   | Get the last known **port (pin)** end position                                               |
-| `PUT`  | `/startline/port`   | Set the **port (pin)** end of the start line to the boat’s current position plus bow offset  |
-| `GET`  | `/startline/stb`    | Get the last known **starboard (boat)** end position                                         |
-| `PUT`  | `/startline/stb`    | Set the **starboard (boat)** end to the current boat position plus bow offset                |
-| `PUT`  | `/timeToStart`      | Set the **timeToStart** (in seconds). Response includes the current **distanceToLine**       |
-
-These routes use traditional Express `req`/`res` handling and are implemented via `registerWithRouter()`.
+- `end`: which end to modify.
+- `position`: `"bow"` or `{ latitude, longitude }`.
+- `delta`: distance in meters along bearing.
+- `rotate`: angle in radians.
 
 ---
 
-### 🛰 V2 Signal K PUT API (Path-based)
+### `navigation.racing.setStartTime`
 
-These API calls operate on **Signal K model paths**.
+Used to **start**, **sync**, **reset**, or **set a fixed start time**.
 
-To use these, send an HTTP `PUT` to:
-
+#### Payload:
+```json
+{
+  "command": "start" | "reset" | "sync" | "adjust" | "set",
+  "delta": 30,
+  "startTime": "2025-06-18T04:15:00Z"
+}
 ```
-/signalk/v1/api/vessels/self/<path>
-```
-
 ---
-
-### 🧠 When to Use Which
-
-| Use Case                        | Recommended API |
-|----------------------------------|------------------|
-| Calling from JavaScript or UI    | V2 (Signal K PUT) |
-| Using curl / simple HTTP tools   | V1 (REST/Express) |
-| Integrating with Signal K clients| V2               |
-| Custom dashboards (e.g. KIP)     | Both supported    |
-
-
 
 ## 🔄 Dependencies
 
-- [geolib](https://github.com/manuelbieh/geolib): Used for all geospatial math, including distances, bearings, and projections.
+- `geolib`: for distance and bearing calculations.
 
 ---
 
@@ -141,11 +134,10 @@ To use these, send an HTTP `PUT` to:
 - Add calculations for:
 - **Time to line** (using STW and heading or polar speeds)
 - **Laylines** and distance/time to them
-- Include webapp UI for on-deck ease of "pinging" the line
+- A KIP widget as well as the webapp.
 - Better integration with **Freeboard-SK** and **KIP** dashboards
 
----
-
+--- 
 ## 📬 Feedback
 
 Bug reports and suggestions are welcome at  
