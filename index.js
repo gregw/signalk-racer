@@ -396,7 +396,8 @@ module.exports = (app) => {
                     state.timeToStart += delta;
                     if (state.timeToStart < 0) state.timeToStart = 0;
 
-                    const adjustedStart = new Date(Date.now() + state.timeToStart * 1000).toISOString();
+                    let now = Date.now();
+                    const adjustedStart = new Date(now - (now % 1000) + state.timeToStart * 1000).toISOString();
                     state.startTime = adjustedStart;
 
                     sendDeltas([

@@ -21,7 +21,7 @@
             text-align: center;
         }
         button {
-            padding: 1em 1.5em;
+            padding: 1em 1em;
             font-size: 1em;
             cursor: pointer;
         }
@@ -235,15 +235,11 @@
 
 <h1>Adjust Start Line</h1>
 <div style="display: flex; justify-content: center; align-items: center; gap: 3em; flex-wrap: wrap;">
-
-
-    <div style="display: grid; grid-template-columns: repeat(11, auto); grid-template-rows: repeat(3, auto); gap: 0.5em;">
+    <div style="display: grid; grid-template-columns: repeat(10, auto); grid-template-rows: repeat(3, auto); gap: 0.5em;">
         <div></div>
         <div></div>
         <button class="port-rotate" onclick="sendAdjustStartLine('port', 0, 1)">+1°</button>
         <div></div>
-        <div></div>
-
         <div></div>
 
         <div></div>
@@ -260,14 +256,9 @@
         <button class="port-tweak" onclick="sendAdjustStartLine('port', -1, 0)">-1m</button>
         <button class="port-move" onclick="sendAdjustStartLine('port', -10, 0)">-10m</button>
 
-        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
-            ---------------<br/>
-            <label><input id="lineLength" readonly style="width: 5em; text-align: center;">(m)</label>
-        </div>
-
         <button class="stb-move" onclick="sendAdjustStartLine('stb', -10, 0)">-10m</button>
         <button class="stb-tweak" onclick="sendAdjustStartLine('stb', -1, 0)">-1m</button>
-        <button class="stb-set" onclick="sendSetStartLine('stb')">Starboard<br/>(boat)</button>
+        <button class="stb-set" onclick="sendSetStartLine('stb')">Stbd<br/>(boat)</button>
         <button class="stb-tweak" onclick="sendAdjustStartLine('stb', 1, 0)">+1m</button>
         <button class="stb-move" onclick="sendAdjustStartLine('stb', +10, 0)">+10m</button>
 
@@ -277,34 +268,30 @@
         <div></div>
         <button class="port-rotate" onclick="sendAdjustStartLine('port', 0, -1)">-1°</button>
         <div></div>
-        <div></div>
-
-        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
-            <label>Bias: <input id="lineBias" readonly style="width: 5em; text-align: center;">(m)</label>
+        <div>
         </div>
-
-        <div></div>
+        <div>
+        </div>
         <div></div>
         <button class="stb-rotate" onclick="sendAdjustStartLine('stb', 0, 1)">-1°</button>
         <div></div>
         <div></div>
     </div>
-
-
 </div>
 
-<div id="status">Connecting...</div>
+<label>Length:&nbsp;<input id="lineLength" readonly style="width: 5em; text-align: center;">m</label>
+<label>Bias:&nbsp;<input id="lineBias" readonly style="width: 5em; text-align: center;">m</label>
 
 <!-- Timer Display -->
 <div style="margin-top: 2em;">
-    <div id="timeToStart" style="font-size: 3em; font-weight: bold;">00:00</div>
+    <div id="timeToStart" style="font-size: 4em; font-weight: bold;">00:00</div>
 </div>
 
 <!-- Start Time Row -->
 <div style="margin-top: 1em; display: flex; justify-content: center; align-items: center; gap: 1em;">
     <button class="button-timer-adjust" onclick="adjustStartTime(-60)">-1 min</button>
     <button class="button-timer-adjust" onclick="adjustStartTime(-1)">-1s</button>
-    <label for="startTime">Start at: <input id="startTime" style="font-size: 1.5em; width: 10em; text-align: center;"></label>
+    <label for="startTime">Start at: <input id="startTime" style="font-size: 1.5em; width: 6em; text-align: center;"></label>
     <button class="button-timer-adjust" onclick="adjustStartTime(1)">+1s</button>
     <button class="button-timer-adjust" onclick="adjustStartTime(60)">+1 min</button>
 </div>
@@ -316,6 +303,8 @@
     <button class="button-timer-command" onclick="sendTimerCommand('sync')">Sync</button>
     <button class="button-timer-command" onclick="sendTimerCommand('reset')">Reset</button>
 </div>
+
+<div id="status">Connecting...</div>
 
 </body>
 </html>

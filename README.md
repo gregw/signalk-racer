@@ -93,7 +93,7 @@ This plugin uses WebSocket-based PUT requests to Signal K model paths.
 Used to **set** or **adjust** either end of the start line.
 
 #### Payload:
-```json
+```
 {
   "end": "port" | "stb",             
   "position": "bow" | { "latitude": ..., "longitude": ... },  
@@ -114,7 +114,7 @@ Used to **set** or **adjust** either end of the start line.
 Used to **start**, **sync**, **reset**, or **set a fixed start time**.
 
 #### Payload:
-```json
+```
 {
   "command": "start" | "reset" | "sync" | "adjust" | "set",
   "delta": 30,
