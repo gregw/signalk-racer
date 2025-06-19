@@ -7,22 +7,22 @@ module.exports = (app) => {
         properties: {
             startLineStb: {
                 type: 'string',
-                title: 'Line starboard waypoint name',
+                title: 'The start line starboard end (boat) waypoint name',
                 default: 'startBoat'
             },
             startLinePort: {
                 type: 'string',
-                title: 'Line port waypoint name',
+                title: 'The start line port end (pin) waypoint name',
                 default: 'startPin'
             },
             period: {
                 type: 'number',
-                title: 'Update period in micro seconds',
+                title: 'The subscription period in microseconds used for position and wind deltas',
                 default: 1000
             },
             timer: {
                 type: 'number',
-                title: 'Timer default period in seconds',
+                title: 'Start Timer default initial period in seconds',
                 default: 300
             },
         }
@@ -52,7 +52,7 @@ module.exports = (app) => {
                             "units": "m",
                             "description": "Bias of the start line for the starboard end",
                             "displayName": "Bias of the start line for the starboard end",
-                            "shortName": "SLB"
+                            "shortName": "Bias"
                         }
                     },
                     {
@@ -61,7 +61,7 @@ module.exports = (app) => {
                             "units": "rad",
                             "description": "Heading of the next leg of the course",
                             "displayName": "Heading of the next leg of the course",
-                            "shortName": "NHDG",
+                            "shortName": "NextHDG",
                         }
                     },
                     {
@@ -70,7 +70,7 @@ module.exports = (app) => {
                             "units": "rad",
                             "description": "TWA on the next leg of the course",
                             "displayName": "TWA on the next leg of the course",
-                            "shortName": "NTWA",
+                            "shortName": "NextTWA",
                         }
                     },
                 ]
