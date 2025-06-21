@@ -1,3 +1,4 @@
+const geolib = require("geolib");
 module.exports = (app) => {
     const state = {};
     const geolib = require('geolib')
@@ -14,6 +15,16 @@ module.exports = (app) => {
                 type: 'string',
                 title: 'The start line port end (pin) waypoint name',
                 default: 'startPin'
+            },
+            updateStartLineWaypoint: {
+                type: 'boolean',
+                title: 'Update the start line waypoints if the startLine is updated',
+                default: 'true'
+            },
+            createStartLineWaypoint: {
+                type: 'boolean',
+                title: 'Create the start line waypoints if the startLine is updated',
+                default: 'true'
             },
             period: {
                 type: 'number',
@@ -124,6 +135,14 @@ module.exports = (app) => {
         return degrees ? degrees * (Math.PI / 180) : null;
     }
 
+    function toOtherEnd(end) {
+        switch(end) {
+            case 'port' : return 'stb';
+            case 'stb' : return 'port';
+            default: return null;
+        }
+    }
+
     function bowPosition(position) {
         let headingTrue = app.getSelfPath("navigation.headingTrue");
         if (!headingTrue)
@@ -150,52 +169,74 @@ module.exports = (app) => {
         return name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
     }
 
-    async function setStartLine(context, path, value, cb) {
+    function complete(callback, statusCode, message, details) {
+        const result = {state: 'COMPLETED', statusCode, message, details};
+        app.debug(JSON.stringify(result));
+        callback(result);
+    }
+
+    // Put an absolute position
+    async function putStartLineEnd(end, position, callback) {
+        app.debug(`putStartLineEnd: ${end} ${JSON.stringify(position)}`);
+
         try {
-            app.debug('setStartLine:', JSON.stringify(value));
-            if (!value || !value.end || typeof value.end !== 'string') {
-                app.error('Failed to set start line: !value.end');
-                cb(null, {state: 'FAILED'});
+            if (!end || !position || typeof position.latitude !== 'number' || typeof position.longitude !== 'number' ) {
+                complete(callback, 400, 'Failed to put start line end: !end || !position');
+                return;
             }
-            const end = value.end.toLowerCase();
+
+            end = end.toLowerCase();
             if (end !== 'port' && end !== 'stb') {
-                app.error('Failed to set start line: unknown end');
-                cb(null, {state: 'FAILED'});
+                complete(callback, 400, 'Failed to put start line end: unknown end');
+                return;
             }
 
-            // Get the position either as arg or of the current bow postion
-            let position = value.position;
-            if (position === 'bow') {
-                position = app.getSelfPath('navigation.position');
-                if (position)
-                    position = bowPosition(position.value);
+            let startLine = state.startLine;
+            if (startLine) {
+                // We have a line, check if this end is the same?
+                if (startLine[end].latitude === position.latitude && startLine[end].longitude === position.longitude) {
+                    complete(callback, 304, 'Put start line end: unchanged line end');
+                    return;
+                }
+            } else {
+                // We don't have a line, so check if this is just an update for one end of the line?
+                const thisEnd = app.getSelfPath(`navigation.racing.startLine${camelCase(end)}`);
+                if (thisEnd && thisEnd.value.lat === position.latitude && thisEnd.value.longitude === position.longitude) {
+                    complete(callback, 304, 'Put start line end: unchanged end');
+                    return;
+                }
+
+                // If we now have both ends, we have a line!
+                const otherEnd = toOtherEnd(end);
+                const otherEndPosition = app.getSelfPath(`navigation.racing.startLine${camelCase(otherEnd)}`);
+                if (otherEndPosition && otherEndPosition.value) {
+                    startLine = {};
+                    startLine[end] = position;
+                    startLine[otherEnd] = otherEnd.value;
+                }
             }
 
-            app.debug(`setStartLine[${end}] = ${JSON.stringify(position)} before translation/rotation`);
-            const startLine = state.startLine;
-
-            // Do any rotations or length changes
-            if (startLine && (value.delta || value.rotate)) {
-                app.debug(`setStartLine[${end}] translate ${value.delta} and rotate ${value.rotate} of ${JSON.stringify(startLine)}`);
-                const fixedEnd = startLine[end === 'port' ? 'stb' : 'port'];
-                const movingEnd = position ? position : startLine[end];
-                app.debug(`fixedEnd: ${JSON.stringify(fixedEnd)} movingEnd: ${JSON.stringify(movingEnd)}`);
-
-                const initialBearing = geolib.getRhumbLineBearing(fixedEnd, movingEnd);
-                const currentDistance = geolib.getDistance(fixedEnd, movingEnd);
-                app.debug(`initialBearing: ${initialBearing} currentDistance: ${currentDistance}`);
-
-                const newDistance = value.delta && typeof value.delta === 'number' ? (currentDistance + value.delta) : currentDistance;
-                const newBearing = value.rotate && typeof value.rotate === 'number'? (initialBearing + toDegrees(value.rotate)) : initialBearing;
-                app.debug(`newDistance: ${newDistance} newBearing: ${newBearing}`);
-
-                const newPosition = geolib.computeDestinationPoint(fixedEnd, newDistance, newBearing);
-                app.debug(`Moved/Rotated ${end} from ${JSON.stringify(position)} to ${JSON.stringify(newPosition)}`);
-                position = newPosition;
+            // If we have a startLine, we can send deltas for this end and the length
+            if (startLine) {
+                const newStartLine = {...state.startLine};
+                newStartLine[end + 'Id'] = waypointId;
+                newStartLine[end] = position;
+                startLine.length = geolib.getPreciseDistance(newStartLine.port, newStartLine.stb, 0.1);
+                startLine.bearing = geolib.getRhumbLineBearing(newStartLine.stb, newStartLine.port);
+                state.startLine = newStartLine;
+                sendDeltas([
+                    {path: `navigation.racing.startLine${camelCase(end)}`, value: position},
+                    {path: 'navigation.racing.startLineLength', value: newStartLine.length},
+                ]);
+            } else {
+                // otherwise we can only send the delta for this end
+                sendDeltas([
+                    {path: `navigation.racing.startLine${camelCase(end)}`, value: position},
+                ]);
             }
 
-            if (position) {
-                app.debug('position:' + JSON.stringify(position));
+            // Set/create the waypoint if we are configured to do so
+            if (state.options.updateStartLineWaypoint) {
                 const waypointConfig =`startLine${camelCase(end)}`;
                 app.debug(`waypointConfig: ${waypointConfig}`);
                 const waypointName = state.options[waypointConfig];
@@ -203,6 +244,7 @@ module.exports = (app) => {
                 let waypointId = startLine ? startLine[end + 'Id'] : null;
                 app.debug(`waypointId: ${waypointId}`);
 
+                // If we have not cached the Id of the line end, then
                 if (!waypointId) {
                     // Get the ID of the last existing waypoint with the given name.
                     const waypoints = await app.resourcesApi.listResources('waypoints', {});
@@ -215,7 +257,7 @@ module.exports = (app) => {
                     app.debug(`waypointId: ${waypointId}`);
                 }
 
-                app.debug(`POSITION to set ${end}(${waypointName}/${waypointId}): ${JSON.stringify(position)}`);
+                app.debug(`Startline waypoint to set ${end}(${waypointName}/${waypointId}): ${JSON.stringify(position)}`);
 
                 const waypoint = {
                     name: waypointName,
@@ -233,49 +275,85 @@ module.exports = (app) => {
 
                 if (waypointId)
                     await app.resourcesApi.setResource('waypoints', waypointId, waypoint);
-                else
+                else if (state.options.createStartLineWaypoint)
                     await app.resourcesApi.createResource('waypoints', waypoint);
             }
 
-            cb(null, {
-                state: 'COMPLETED',
-                result: {
-                    distanceToStart: state.distanceToLine ? state.distanceToLine : null,
-                }
-            });
+            // Complete the handler successfully
+            complete(callback, 200, 'Put start line end: OK');
 
-            if (startLine) {
-                const newStartLine = {...state.startLine};
-                newStartLine[end + 'Id'] = waypointId;
-                newStartLine[end] = position;
-                startLine.length = geolib.getPreciseDistance(newStartLine.port, newStartLine.stb, 0.1);
-                startLine.bearing = geolib.getRhumbLineBearing(newStartLine.stb, newStartLine.port);
-                state.startLine = newStartLine;
-                sendDeltas([
-                    {path: `navigation.racing.startLine${end.charAt(0).toUpperCase() + end.slice(1)}`, value: position},
-                    {path: 'navigation.racing.startLineLength', value: newStartLine.length},
-                ]);
-
+            // If we have a startLine, then process position against the new line
+            if (startLine)
                 processPosition(null);
-            } else {
-                findLineAndThenProcess(null, true);
-            }
         } catch (err) {
-            app.error('Failed to set start line end:', JSON.stringify(err));
-            cb(null, {state: 'FAILED'});
-            throw err;
+            complete(callback, 500,  'Put start line end: Failed ' + JSON.stringify(err));
         }
+
+        return { state: 'PENDING' }
     }
 
-    async function startTimeCommand(context, path, value, cb) {
+    async function setStartLine(context, path, args, callback) {
+        try {
+            app.debug('setStartLine:', JSON.stringify(args));
+            if (!args || !args.end || typeof args.end !== 'string') {
+                complete(callback, 400,  'Failed to set the startLine: !end');
+                return;
+            }
+            const end = args.end.toLowerCase();
+            if (end !== 'port' && end !== 'stb') {
+                complete(callback, 400,  'Failed to set the startLine: unknown end');
+                return;
+            }
+
+            // Get the position either as arg or as the current bow position
+            let position = args.position;
+            if (position === 'bow') {
+                position = app.getSelfPath('navigation.position');
+                if (position)
+                    position = bowPosition(position.value);
+            }
+
+            app.debug(`setStartLine[${end}] = ${JSON.stringify(position)} before translation/rotation`);
+            const startLine = state.startLine;
+
+            // Do any rotations or length changes
+            if (startLine && (args.delta || args.rotate)) {
+                app.debug(`setStartLine[${end}] translate ${args.delta} and rotate ${args.rotate} of ${JSON.stringify(startLine)}`);
+                const otherEnd = startLine[toOtherEnd(end)];
+                const thisEnd = position ? position : startLine[end];
+                app.debug(`fixedEnd: ${JSON.stringify(otherEnd)} movingEnd: ${JSON.stringify(thisEnd)}`);
+
+                const initialBearing = geolib.getRhumbLineBearing(otherEnd, thisEnd);
+                const currentDistance = geolib.getDistance(otherEnd, thisEnd);
+                app.debug(`initialBearing: ${initialBearing} currentDistance: ${currentDistance}`);
+
+                const newDistance = args.delta && typeof args.delta === 'number' ? (currentDistance + args.delta) : currentDistance;
+                const newBearing = args.rotate && typeof args.rotate === 'number'? (initialBearing + toDegrees(args.rotate)) : initialBearing;
+                app.debug(`newDistance: ${newDistance} newBearing: ${newBearing}`);
+
+                const newPosition = geolib.computeDestinationPoint(otherEnd, newDistance, newBearing);
+                app.debug(`Moved/Rotated ${end} from ${JSON.stringify(position)} to ${JSON.stringify(newPosition)}`);
+                position = newPosition;
+            }
+
+            if (position)
+                return putStartLineEnd(end, position, callback);
+            complete(callback, 500,  'Failed to set the startLine: No position');
+        } catch (err) {
+            complete(callback, 500,  'Failed to set the startLine: ' + JSON.stringify(err));
+        }
+        return { state: 'PENDING' }
+    }
+
+    async function startTimeCommand(context, path, args, callback) {
         // start / reset / sync
         try {
-            app.debug('startTimerCommand:', JSON.stringify(value));
-            if (!value || !value.command || typeof value.command !== 'string') {
-                app.error('Failed to command start timer: ' + JSON.stringify(value));
-                cb(null, {state: 'FAILED'});
+            app.debug('startTimerCommand:', JSON.stringify(args));
+            if (!args || !args.command || typeof args.command !== 'string') {
+                complete(callback, 400,  'Failed to command timer: no command');
+                return;
             }
-            const command = value.command.toLowerCase();
+            const command = args.command.toLowerCase();
 
             switch (command)
             {
@@ -302,7 +380,7 @@ module.exports = (app) => {
                         state.timeToStart--;
                         sendDeltas([{path: 'navigation.racing.timeToStart', value: state.timeToStart}]);
                     }, 1000);
-                    cb(null, {state: 'COMPLETED'});
+                    complete(callback, 200,  'start timer: OK');
                     break;
                 }
                 case 'reset': {
@@ -314,13 +392,13 @@ module.exports = (app) => {
                         {path: 'navigation.racing.timeToStart', value: state.timeToStart},
                         {path: 'navigation.racing.startTime', value: null}
                     ]);
-                    cb(null, {state: 'COMPLETED'});
+                    complete(callback, 200,  'reset timer: OK');
                     break;
                 }
 
                 case 'sync': {
                     if (!state.timerRunning || state.timeToStart == null) {
-                        cb(null, { state: 'FAILED', message: 'Timer not running' });
+                        complete(callback, 500,  'sync timer: !running');
                         return;
                     }
 
@@ -332,27 +410,27 @@ module.exports = (app) => {
                         { path: 'navigation.racing.timeToStart', value: state.timeToStart },
                         { path: 'navigation.racing.startTime', value: state.startTime }
                     ]);
-                    cb(null, { state: 'COMPLETED' });
+                    complete(callback, 200,  'sync timer: OK');
                     break;
                 }
 
                 case 'set': {
-                    const input = value.startTime;
+                    const input = args.startTime;
                     if (!input) {
-                        cb(null, { state: 'FAILED', message: 'Missing startTime' });
+                        complete(callback, 400,  'reset timer: !startTime');
                         return;
                     }
 
                     const inputTime = new Date(input);
                     if (isNaN(inputTime)) {
-                        cb(null, { state: 'FAILED', message: 'Invalid startTime format' });
+                        complete(callback, 400,  'reset timer: invalid startTime');
                         return;
                     }
 
                     const now = new Date();
-                    const diff = Math.floor((inputTime - now) / 1000);
+                    const secondsToGo = Math.floor((inputTime - now) / 1000);
 
-                    if (diff <= 0) {
+                    if (secondsToGo <= 0) {
                         state.timerRunning = false;
                         state.timeToStart = 0;
                         state.startTime = null;
@@ -360,12 +438,12 @@ module.exports = (app) => {
                             { path: 'navigation.racing.timeToStart', value: 0 },
                             { path: 'navigation.racing.startTime', value: null }
                         ]);
-                        cb(null, { state: 'COMPLETED' });
+                        complete(callback, 200,  'set timer: 0K');
                         return;
                     }
 
                     state.timerRunning = true;
-                    state.timeToStart = diff;
+                    state.timeToStart = secondsToGo;
                     state.startTime = inputTime.toISOString();
 
                     sendDeltas([
@@ -382,12 +460,12 @@ module.exports = (app) => {
                         state.timeToStart--;
                         sendDeltas([{ path: 'navigation.racing.timeToStart', value: state.timeToStart }]);
                     }, 1000);
-                    cb(null, { state: 'COMPLETED' });
+                    complete(callback, 200,  'set timer: OK');
                     break;
                 }
 
                 case 'adjust': {
-                    const delta = Number(value.delta);
+                    const delta = Number(args.delta);
                     if (isNaN(delta) || state.timeToStart == null || !state.startTime) {
                         cb(null, { state: 'FAILED', message: 'Cannot adjust: invalid state or delta' });
                         return;
@@ -404,21 +482,19 @@ module.exports = (app) => {
                         { path: 'navigation.racing.timeToStart', value: state.timeToStart },
                         { path: 'navigation.racing.startTime', value: adjustedStart }
                     ]);
-                    cb(null, { state: 'COMPLETED' });
+                    complete(callback, 200,  'adjust timer: OK');
                     break;
                 }
 
                 default : {
-                    app.error('Unknown command to start timer: ' + command);
-                    cb(null, {state: 'FAILED'});
+                    complete(callback, 400,  'Failed to command timer: unknown command');
                     return;
                 }
             }
         } catch (err) {
-            app.error('Failed to set start line end:', JSON.stringify(err));
-            cb(null, {state: 'FAILED'});
-            throw err;
+            complete(callback, 500,  'Failed to command timer: ' + JSON.stringify(err));
         }
+        return { state: 'PENDING' }
     }
 
     function findLineAndThenProcess(position, alwaysFindLine = false) {
@@ -759,6 +835,8 @@ module.exports = (app) => {
                 }
             );
 
+            app.registerPutHandler('vessels.self', 'navigation.racing.startLinePort', (ctx, path, value, callback) => putStartLineEnd('port', value, callback));
+            app.registerPutHandler('vessels.self', 'navigation.racing.startLineStb', (ctx, path, value, callback) => putStartLineEnd('stb', value, callback));
             app.registerPutHandler('vessels.self', 'navigation.racing.setStartLine', setStartLine);
             app.registerPutHandler('vessels.self', 'navigation.racing.setStartTime', startTimeCommand);
         },
