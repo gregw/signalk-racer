@@ -1,4 +1,4 @@
-const geolib = require("geolib");
+
 module.exports = (app) => {
     const state = {};
     const geolib = require('geolib')
@@ -23,7 +23,7 @@ module.exports = (app) => {
             },
             createStartLineWaypoint: {
                 type: 'boolean',
-                title: 'Create the start line waypoints if the startLine is updated',
+                title: 'Create the start line waypoints if the startLine is updated and the waypoint does not exist',
                 default: 'true'
             },
             period: {
@@ -176,7 +176,7 @@ module.exports = (app) => {
     }
 
     // Put an absolute position
-    async function putStartLineEnd(end, position, callback) {
+    async function putStartLineEnd(end, position, callback, updateWaypoint) {
         app.debug(`putStartLineEnd: ${end} ${JSON.stringify(position)}`);
 
         try {
@@ -218,8 +218,8 @@ module.exports = (app) => {
 
             // If we have a startLine, we can send deltas for this end and the length
             if (startLine) {
+                app.debug('update existing start line');
                 const newStartLine = {...state.startLine};
-                newStartLine[end + 'Id'] = waypointId;
                 newStartLine[end] = position;
                 startLine.length = geolib.getPreciseDistance(newStartLine.port, newStartLine.stb, 0.1);
                 startLine.bearing = geolib.getRhumbLineBearing(newStartLine.stb, newStartLine.port);
@@ -236,7 +236,7 @@ module.exports = (app) => {
             }
 
             // Set/create the waypoint if we are configured to do so
-            if (state.options.updateStartLineWaypoint) {
+            if (state.options.updateStartLineWaypoint || updateWaypoint) {
                 const waypointConfig =`startLine${camelCase(end)}`;
                 app.debug(`waypointConfig: ${waypointConfig}`);
                 const waypointName = state.options[waypointConfig];
@@ -277,6 +277,10 @@ module.exports = (app) => {
                     await app.resourcesApi.setResource('waypoints', waypointId, waypoint);
                 else if (state.options.createStartLineWaypoint)
                     await app.resourcesApi.createResource('waypoints', waypoint);
+                else
+                    app.debug('startline waypoint not created');
+            } else {
+                app.debug('startline waypoint not updated');
             }
 
             // Complete the handler successfully
@@ -321,7 +325,7 @@ module.exports = (app) => {
                 app.debug(`setStartLine[${end}] translate ${args.delta} and rotate ${args.rotate} of ${JSON.stringify(startLine)}`);
                 const otherEnd = startLine[toOtherEnd(end)];
                 const thisEnd = position ? position : startLine[end];
-                app.debug(`fixedEnd: ${JSON.stringify(otherEnd)} movingEnd: ${JSON.stringify(thisEnd)}`);
+                app.debug(`otherEnd(fixed): ${JSON.stringify(otherEnd)} thisEnd(moving): ${JSON.stringify(thisEnd)}`);
 
                 const initialBearing = geolib.getRhumbLineBearing(otherEnd, thisEnd);
                 const currentDistance = geolib.getDistance(otherEnd, thisEnd);
@@ -337,12 +341,25 @@ module.exports = (app) => {
             }
 
             if (position)
-                return putStartLineEnd(end, position, callback);
+                return putStartLineEnd(end, position, callback, args.updateWaypoint === true);
             complete(callback, 500,  'Failed to set the startLine: No position');
         } catch (err) {
             complete(callback, 500,  'Failed to set the startLine: ' + JSON.stringify(err));
         }
         return { state: 'PENDING' }
+    }
+
+    function setTimer() {
+        if (state.timerInterval)
+            clearInterval(state.timerInterval);
+        state.timerInterval = setInterval(() => {
+            if (!state.timerRunning || state.timeToStart <= 0) {
+                clearInterval(state.timerInterval);
+                return;
+            }
+            state.timeToStart--;
+            sendDeltas([{ path: 'navigation.racing.timeToStart', value: state.timeToStart }]);
+        }, 1000);
     }
 
     async function startTimeCommand(context, path, args, callback) {
@@ -371,15 +388,7 @@ module.exports = (app) => {
                         {path: 'navigation.racing.timeToStart', value: timeToStart}
                     ]);
 
-                    if (state.timerInterval) clearInterval(state.timerInterval);
-                    state.timerInterval = setInterval(() => {
-                        if (!state.timerRunning || state.timeToStart <= 0) {
-                            clearInterval(state.timerInterval);
-                            return;
-                        }
-                        state.timeToStart--;
-                        sendDeltas([{path: 'navigation.racing.timeToStart', value: state.timeToStart}]);
-                    }, 1000);
+                    setTimer();
                     complete(callback, 200,  'start timer: OK');
                     break;
                 }
@@ -451,15 +460,7 @@ module.exports = (app) => {
                         { path: 'navigation.racing.startTime', value: state.startTime }
                     ]);
 
-                    if (state.timerInterval) clearInterval(state.timerInterval);
-                    state.timerInterval = setInterval(() => {
-                        if (!state.timerRunning || state.timeToStart <= 0) {
-                            clearInterval(state.timerInterval);
-                            return;
-                        }
-                        state.timeToStart--;
-                        sendDeltas([{ path: 'navigation.racing.timeToStart', value: state.timeToStart }]);
-                    }, 1000);
+                    setTimer();
                     complete(callback, 200,  'set timer: OK');
                     break;
                 }
@@ -804,7 +805,7 @@ module.exports = (app) => {
                     });
                     processWind(twd);
                 }
-            )
+            );
 
             // Subscribe to Active route.
             app.subscriptionmanager.subscribe(
@@ -835,8 +836,44 @@ module.exports = (app) => {
                 }
             );
 
+            // Subscribe to racing start line to see changes from any other plugin.
+            app.subscriptionmanager.subscribe(
+                {
+                    context: 'vessels.' + app.selfId,
+                    subscribe: [
+                        { path: 'navigation.racing.startLinePort', policy: 'instant'},
+                        { path: 'navigation.racing.startLineStb', policy: 'instant'},
+                    ]
+                },
+                unsubscribes,
+                (subscriptionError) => {
+                    app.error('Error:' + subscriptionError)
+                },
+                (delta) => {
+                    app.debug('DELTAS START LINE ENDS ' + JSON.stringify(delta));
+                    delta.updates.forEach((u) => {
+                        u.values.forEach((v) => {
+                            app.debug(`DELTA START LINE END from ${u.source.label}: ${v.path} = ${JSON.stringify(v.value)}`);
+                            if (u.source && u.source.label && u.source.label !== 'signalk-racer') {
+                                switch (v.path) {
+                                    case 'navigation.racing.startLinePort' :
+                                        putStartLineEnd('port', v.value, ignored => {}, false).then(ignored =>{});
+                                        break;
+                                    case 'navigation.racing.startLineStb' :
+                                        putStartLineEnd('port', v.value, ignored => {}, false).then(ignored =>{});
+                                        break;
+                                }
+                            }
+                        })
+                    });
+                }
+            );
+
+            // register to the standard path, so we can implement a direct put
             app.registerPutHandler('vessels.self', 'navigation.racing.startLinePort', (ctx, path, value, callback) => putStartLineEnd('port', value, callback));
             app.registerPutHandler('vessels.self', 'navigation.racing.startLineStb', (ctx, path, value, callback) => putStartLineEnd('stb', value, callback));
+
+            // register to API paths for this plugin
             app.registerPutHandler('vessels.self', 'navigation.racing.setStartLine', setStartLine);
             app.registerPutHandler('vessels.self', 'navigation.racing.setStartTime', startTimeCommand);
         },

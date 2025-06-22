@@ -4,6 +4,12 @@
     <meta charset="UTF-8">
     <title>SignalK Racer Control</title>
     <style>
+
+        body {
+            background-color: black;
+            color: white; /* optional for visibility */
+        }
+
         .button-timer-command    { background-color: #041b8e; color: white; }
         .button-timer-adjust   { background-color: #2196F3; color: white; }
         button {
@@ -98,26 +104,33 @@
                 data.updates.forEach(update => {
                     if (update.values) {
                         update.values.forEach(value => {
-                            if (value.path === "navigation.racing.startLineLength") {
-                                document.getElementById("lineLength").value = value.value.toFixed(1);
-                            } else if (value.path === "navigation.racing.stbLineBias") {
-                                document.getElementById("lineBias").value = value.value.toFixed(1);
-                            } else if (value.path === "navigation.racing.timeToStart") {
-                                document.getElementById('timeToStart').textContent = formatTimeToMMSS(value.value);
-                            } else if (value.path === "navigation.racing.startTime") {
-                                if (!value.value) {
-                                    document.getElementById('startTime').value = "HH:MM:SS";
-                                } else {
-                                    startTime = new Date(value.value); // handles ISO 8601 format
-                                    document.getElementById('startTime').value =
-                                        startTime.toLocaleTimeString([], {
-                                            hour: '2-digit',
-                                            minute: '2-digit',
-                                            second: '2-digit'
-                                        });
+                            switch (value.path) {
+                                case "navigation.racing.startLineLength" :
+                                    // document.getElementById("lineLength").value = value.value.toFixed(1);
+                                    break;
+                                case "navigation.racing.stbLineBias" :
+                                    // document.getElementById("lineBias").value = value.value.toFixed(1);
+                                    break;
+                                case "navigation.racing.timeToStart":
+                                    document.getElementById('timeToStart').textContent = formatTimeToMMSS(value.value);
+                                    break;
+                                case "navigation.racing.startTime": {
+                                    if (!value.value) {
+                                        document.getElementById('startTime').value = "HH:MM:SS";
+                                    } else {
+                                        startTime = new Date(value.value); // handles ISO 8601 format
+                                        document.getElementById('startTime').value =
+                                            startTime.toLocaleTimeString([], {
+                                                hour: '2-digit',
+                                                minute: '2-digit',
+                                                second: '2-digit'
+                                            });
+                                    }
+                                    break;
                                 }
-                            } else {
-                                console.log("Received value: " + value.path + " = " + JSON.stringify(value.value));
+                                default:
+                                    console.log("Received value: " + value.path + " = " + JSON.stringify(value.value));
+                                    break;
                             }
                         });
                     }
@@ -233,7 +246,6 @@
 
 </script>
 
-<h1>Adjust Start Line</h1>
 <div style="display: flex; justify-content: center; align-items: center; gap: 3em; flex-wrap: wrap;">
     <div style="display: grid; grid-template-columns: repeat(10, auto); grid-template-rows: repeat(3, auto); gap: 0.5em;">
         <div></div>
@@ -252,13 +264,13 @@
 
         <button class="port-move" onclick="sendAdjustStartLine('port', 10, 0)">+10m</button>
         <button class="port-tweak" onclick="sendAdjustStartLine('port', 1, 0)">+1m</button>
-        <button class="port-set" onclick="sendSetStartLine('port')">Port<br/>(pin)</button>
+        <button class="port-set" onclick="sendSetStartLine('port')">Start<br/>Port<br/>(pin)</button>
         <button class="port-tweak" onclick="sendAdjustStartLine('port', -1, 0)">-1m</button>
         <button class="port-move" onclick="sendAdjustStartLine('port', -10, 0)">-10m</button>
 
         <button class="stb-move" onclick="sendAdjustStartLine('stb', -10, 0)">-10m</button>
         <button class="stb-tweak" onclick="sendAdjustStartLine('stb', -1, 0)">-1m</button>
-        <button class="stb-set" onclick="sendSetStartLine('stb')">Stbd<br/>(boat)</button>
+        <button class="stb-set" onclick="sendSetStartLine('stb')">Start<br/>Stbd<br/>(boat)</button>
         <button class="stb-tweak" onclick="sendAdjustStartLine('stb', 1, 0)">+1m</button>
         <button class="stb-move" onclick="sendAdjustStartLine('stb', +10, 0)">+10m</button>
 
@@ -276,9 +288,6 @@
         <div></div>
     </div>
 </div>
-
-<label>Length:&nbsp;<input id="lineLength" readonly style="width: 5em; text-align: center;">m</label>
-<label>Bias:&nbsp;<input id="lineBias" readonly style="width: 5em; text-align: center;">m</label>
 
 <!-- Timer Display -->
 <div style="margin-top: 2em;">
