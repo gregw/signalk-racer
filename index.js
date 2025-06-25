@@ -71,7 +71,7 @@ module.exports = (app) => {
                         "value": {
                             "units": "rad",
                             "description": "Heading of the next leg of the course",
-                            "displayName": "Heading of the next leg of the course",
+                            "displayName": "Next Heading",
                             "shortName": "NextHDG",
                         }
                     },
@@ -80,7 +80,7 @@ module.exports = (app) => {
                         "value": {
                             "units": "rad",
                             "description": "TWA on the next leg of the course",
-                            "displayName": "TWA on the next leg of the course",
+                            "displayName": "Next TWA",
                             "shortName": "NextTWA",
                         }
                     },

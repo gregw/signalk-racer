@@ -1,6 +1,7 @@
 ## 0.9.8
+ + Minor updates to webapp UI
 
-## 0.9.7
+## 0.9.7 
  + Cleaned up webapp UI
  + reset to seconds when adjusting time
 
