@@ -1,3 +1,6 @@
+## 0.9.9 Working with KIP prototypes
+ + Fixed API handlers to use return status rather than callback
+
 ## 0.9.8
  + Minor updates to webapp UI
 

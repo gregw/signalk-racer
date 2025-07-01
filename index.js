@@ -1,4 +1,3 @@
-
 module.exports = (app) => {
     const state = {};
     const geolib = require('geolib')
@@ -136,10 +135,13 @@ module.exports = (app) => {
     }
 
     function toOtherEnd(end) {
-        switch(end) {
-            case 'port' : return 'stb';
-            case 'stb' : return 'port';
-            default: return null;
+        switch (end) {
+            case 'port' :
+                return 'stb';
+            case 'stb' :
+                return 'port';
+            default:
+                return null;
         }
     }
 
@@ -170,9 +172,9 @@ module.exports = (app) => {
     }
 
     function complete(callback, statusCode, message, details) {
-        const result = {state: 'COMPLETED', statusCode, message, details};
+        const result = {state: statusCode === 200 ? 'SUCCESS' : 'FAILURE', statusCode, message, details};
         app.debug(JSON.stringify(result));
-        callback(result);
+        return result;
     }
 
     // Put an absolute position
@@ -180,30 +182,26 @@ module.exports = (app) => {
         app.debug(`putStartLineEnd: ${end} ${JSON.stringify(position)}`);
 
         try {
-            if (!end || !position || typeof position.latitude !== 'number' || typeof position.longitude !== 'number' ) {
-                complete(callback, 400, 'Failed to put start line end: !end || !position');
-                return;
+            if (!end || !position || typeof position.latitude !== 'number' || typeof position.longitude !== 'number') {
+                return complete(callback, 400, 'Failed to put start line end: !end || !position');
             }
 
             end = end.toLowerCase();
             if (end !== 'port' && end !== 'stb') {
-                complete(callback, 400, 'Failed to put start line end: unknown end');
-                return;
+                return complete(callback, 400, 'Failed to put start line end: unknown end');
             }
 
             let startLine = state.startLine;
             if (startLine) {
                 // We have a line, check if this end is the same?
                 if (startLine[end].latitude === position.latitude && startLine[end].longitude === position.longitude) {
-                    complete(callback, 304, 'Put start line end: unchanged line end');
-                    return;
+                    return complete(callback, 304, 'Put start line end: unchanged line end');
                 }
             } else {
                 // We don't have a line, so check if this is just an update for one end of the line?
                 const thisEnd = app.getSelfPath(`navigation.racing.startLine${camelCase(end)}`);
                 if (thisEnd && thisEnd.value.lat === position.latitude && thisEnd.value.longitude === position.longitude) {
-                    complete(callback, 304, 'Put start line end: unchanged end');
-                    return;
+                    return complete(callback, 304, 'Put start line end: unchanged end');
                 }
 
                 // If we now have both ends, we have a line!
@@ -237,7 +235,7 @@ module.exports = (app) => {
 
             // Set/create the waypoint if we are configured to do so
             if (state.options.updateStartLineWaypoint || updateWaypoint) {
-                const waypointConfig =`startLine${camelCase(end)}`;
+                const waypointConfig = `startLine${camelCase(end)}`;
                 app.debug(`waypointConfig: ${waypointConfig}`);
                 const waypointName = state.options[waypointConfig];
                 app.debug(`waypointName: ${waypointName}`);
@@ -268,6 +266,11 @@ module.exports = (app) => {
                             coordinates: [position.longitude, position.latitude]
                         },
                         properties: {}
+                    },
+                    type: end === 'port' ? 'start-pin' : 'start-boat',
+                    position: {
+                        latitude: position.latitude,
+                        longitude: position.longitude
                     }
                 }
 
@@ -283,36 +286,33 @@ module.exports = (app) => {
                 app.debug('startline waypoint not updated');
             }
 
-            // Complete the handler successfully
-            complete(callback, 200, 'Put start line end: OK');
 
             // If we have a startLine, then process position against the new line
             if (startLine)
                 processPosition(null);
+            // Complete the handler successfully
+            return complete(callback, 200, 'Put start line end: OK');
         } catch (err) {
-            complete(callback, 500,  'Put start line end: Failed ' + JSON.stringify(err));
+            return complete(callback, 500, 'Put start line end: Failed ' + JSON.stringify(err));
         }
-
-        return { state: 'PENDING' }
     }
 
     async function setStartLine(context, path, args, callback) {
         try {
             app.debug('setStartLine:', JSON.stringify(args));
             if (!args || !args.end || typeof args.end !== 'string') {
-                complete(callback, 400,  'Failed to set the startLine: !end');
-                return;
+                return complete(callback, 400, 'Failed to set the startLine: !end');
             }
             const end = args.end.toLowerCase();
             if (end !== 'port' && end !== 'stb') {
-                complete(callback, 400,  'Failed to set the startLine: unknown end');
-                return;
+                return complete(callback, 400, 'Failed to set the startLine: unknown end');
             }
 
             // Get the position either as arg or as the current bow position
             let position = args.position;
-            if (position === 'bow') {
+            if (position === 'bow' || !position && !args.delta && !args.rotate ) {
                 position = app.getSelfPath('navigation.position');
+                app.debug('bowPosition:' + JSON.stringify(position));
                 if (position)
                     position = bowPosition(position.value);
             }
@@ -332,7 +332,7 @@ module.exports = (app) => {
                 app.debug(`initialBearing: ${initialBearing} currentDistance: ${currentDistance}`);
 
                 const newDistance = args.delta && typeof args.delta === 'number' ? (currentDistance + args.delta) : currentDistance;
-                const newBearing = args.rotate && typeof args.rotate === 'number'? (initialBearing + toDegrees(args.rotate)) : initialBearing;
+                const newBearing = args.rotate && typeof args.rotate === 'number' ? (initialBearing + toDegrees(args.rotate)) : initialBearing;
                 app.debug(`newDistance: ${newDistance} newBearing: ${newBearing}`);
 
                 const newPosition = geolib.computeDestinationPoint(otherEnd, newDistance, newBearing);
@@ -342,11 +342,10 @@ module.exports = (app) => {
 
             if (position)
                 return putStartLineEnd(end, position, callback, args.updateWaypoint === true);
-            complete(callback, 500,  'Failed to set the startLine: No position');
+            return complete(callback, 500, 'Failed to set the startLine: No position');
         } catch (err) {
-            complete(callback, 500,  'Failed to set the startLine: ' + JSON.stringify(err));
+            return complete(callback, 500, 'Failed to set the startLine: ' + JSON.stringify(err));
         }
-        return { state: 'PENDING' }
     }
 
     function setTimer() {
@@ -358,7 +357,7 @@ module.exports = (app) => {
                 return;
             }
             state.timeToStart--;
-            sendDeltas([{ path: 'navigation.racing.timeToStart', value: state.timeToStart }]);
+            sendDeltas([{path: 'navigation.racing.timeToStart', value: state.timeToStart}]);
         }, 1000);
     }
 
@@ -367,13 +366,11 @@ module.exports = (app) => {
         try {
             app.debug('startTimerCommand:', JSON.stringify(args));
             if (!args || !args.command || typeof args.command !== 'string') {
-                complete(callback, 400,  'Failed to command timer: no command');
-                return;
+                return complete(callback, 400, 'Failed to command timer: no command');
             }
             const command = args.command.toLowerCase();
 
-            switch (command)
-            {
+            switch (command) {
                 case 'start': {
                     const now = new Date();
                     const timeToStart = state.timeToStart ?? state.options.timer ?? 300;
@@ -389,8 +386,7 @@ module.exports = (app) => {
                     ]);
 
                     setTimer();
-                    complete(callback, 200,  'start timer: OK');
-                    break;
+                    return complete(callback, 200, 'start timer: OK');
                 }
                 case 'reset': {
                     state.timerRunning = false;
@@ -401,14 +397,12 @@ module.exports = (app) => {
                         {path: 'navigation.racing.timeToStart', value: state.timeToStart},
                         {path: 'navigation.racing.startTime', value: null}
                     ]);
-                    complete(callback, 200,  'reset timer: OK');
-                    break;
+                    return complete(callback, 200, 'reset timer: OK');
                 }
 
                 case 'sync': {
                     if (!state.timerRunning || state.timeToStart == null) {
-                        complete(callback, 500,  'sync timer: !running');
-                        return;
+                        return complete(callback, 500, 'sync timer: !running');
                     }
 
                     const rounded = Math.round(state.timeToStart / 60) * 60;
@@ -416,24 +410,21 @@ module.exports = (app) => {
                     state.startTime = new Date(Date.now() + rounded * 1000).toISOString();
 
                     sendDeltas([
-                        { path: 'navigation.racing.timeToStart', value: state.timeToStart },
-                        { path: 'navigation.racing.startTime', value: state.startTime }
+                        {path: 'navigation.racing.timeToStart', value: state.timeToStart},
+                        {path: 'navigation.racing.startTime', value: state.startTime}
                     ]);
-                    complete(callback, 200,  'sync timer: OK');
-                    break;
+                    return complete(callback, 200, 'sync timer: OK');
                 }
 
                 case 'set': {
                     const input = args.startTime;
                     if (!input) {
-                        complete(callback, 400,  'reset timer: !startTime');
-                        return;
+                        return complete(callback, 400, 'reset timer: !startTime');
                     }
 
                     const inputTime = new Date(input);
                     if (isNaN(inputTime)) {
-                        complete(callback, 400,  'reset timer: invalid startTime');
-                        return;
+                        return complete(callback, 400, 'reset timer: invalid startTime');
                     }
 
                     const now = new Date();
@@ -444,11 +435,10 @@ module.exports = (app) => {
                         state.timeToStart = 0;
                         state.startTime = null;
                         sendDeltas([
-                            { path: 'navigation.racing.timeToStart', value: 0 },
-                            { path: 'navigation.racing.startTime', value: null }
+                            {path: 'navigation.racing.timeToStart', value: 0},
+                            {path: 'navigation.racing.startTime', value: null}
                         ]);
-                        complete(callback, 200,  'set timer: 0K');
-                        return;
+                        return complete(callback, 200, 'set timer: 0K');
                     }
 
                     state.timerRunning = true;
@@ -456,19 +446,18 @@ module.exports = (app) => {
                     state.startTime = inputTime.toISOString();
 
                     sendDeltas([
-                        { path: 'navigation.racing.timeToStart', value: state.timeToStart },
-                        { path: 'navigation.racing.startTime', value: state.startTime }
+                        {path: 'navigation.racing.timeToStart', value: state.timeToStart},
+                        {path: 'navigation.racing.startTime', value: state.startTime}
                     ]);
 
                     setTimer();
-                    complete(callback, 200,  'set timer: OK');
-                    break;
+                    return complete(callback, 200, 'set timer: OK');
                 }
 
                 case 'adjust': {
                     const delta = Number(args.delta);
                     if (isNaN(delta) || state.timeToStart == null || !state.startTime) {
-                        cb(null, { state: 'FAILED', message: 'Cannot adjust: invalid state or delta' });
+                        cb(null, {state: 'FAILED', message: 'Cannot adjust: invalid state or delta'});
                         return;
                     }
 
@@ -480,22 +469,19 @@ module.exports = (app) => {
                     state.startTime = adjustedStart;
 
                     sendDeltas([
-                        { path: 'navigation.racing.timeToStart', value: state.timeToStart },
-                        { path: 'navigation.racing.startTime', value: adjustedStart }
+                        {path: 'navigation.racing.timeToStart', value: state.timeToStart},
+                        {path: 'navigation.racing.startTime', value: adjustedStart}
                     ]);
-                    complete(callback, 200,  'adjust timer: OK');
-                    break;
+                    return complete(callback, 200, 'adjust timer: OK');
                 }
 
                 default : {
-                    complete(callback, 400,  'Failed to command timer: unknown command');
-                    return;
+                    return complete(callback, 400, 'Failed to command timer: unknown command');
                 }
             }
         } catch (err) {
-            complete(callback, 500,  'Failed to command timer: ' + JSON.stringify(err));
+            return complete(callback, 500, 'Failed to command timer: ' + JSON.stringify(err));
         }
-        return { state: 'PENDING' }
     }
 
     function findLineAndThenProcess(position, alwaysFindLine = false) {
@@ -613,8 +599,7 @@ module.exports = (app) => {
             sendDeltas([
                 {path: 'navigation.racing.distanceStartline', value: distanceToLine},
             ]);
-        }
-        else if (state.distanceToLine) {
+        } else if (state.distanceToLine) {
             state.distanceToLine = null;
             sendDeltas([
                 {path: 'navigation.racing.distanceStartline', value: null},
@@ -841,8 +826,8 @@ module.exports = (app) => {
                 {
                     context: 'vessels.' + app.selfId,
                     subscribe: [
-                        { path: 'navigation.racing.startLinePort', policy: 'instant'},
-                        { path: 'navigation.racing.startLineStb', policy: 'instant'},
+                        {path: 'navigation.racing.startLinePort', policy: 'instant'},
+                        {path: 'navigation.racing.startLineStb', policy: 'instant'},
                     ]
                 },
                 unsubscribes,
@@ -857,10 +842,14 @@ module.exports = (app) => {
                             if (u.source && u.source.label && u.source.label !== 'signalk-racer') {
                                 switch (v.path) {
                                     case 'navigation.racing.startLinePort' :
-                                        putStartLineEnd('port', v.value, ignored => {}, false).then(ignored =>{});
+                                        putStartLineEnd('port', v.value, ignored => {
+                                        }, false).then(ignored => {
+                                        });
                                         break;
                                     case 'navigation.racing.startLineStb' :
-                                        putStartLineEnd('port', v.value, ignored => {}, false).then(ignored =>{});
+                                        putStartLineEnd('port', v.value, ignored => {
+                                        }, false).then(ignored => {
+                                        });
                                         break;
                                 }
                             }
