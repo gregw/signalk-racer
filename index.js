@@ -50,6 +50,7 @@ module.exports = (app) => {
                     {
                         "path": "navigation.racing.startLineLength",
                         "value": {
+                            "type": "number",
                             "units": "m",
                             "description": "Length of the start line",
                             "displayName": "Length of the start line",
@@ -59,6 +60,7 @@ module.exports = (app) => {
                     {
                         "path": "navigation.racing.stbLineBias",
                         "value": {
+                            "type": "number",
                             "units": "m",
                             "description": "Bias of the start line for the starboard end",
                             "displayName": "Bias of the start line for the starboard end",
@@ -68,6 +70,7 @@ module.exports = (app) => {
                     {
                         "path": "navigation.racing.nextLegHeading",
                         "value": {
+                            "type": "number",
                             "units": "rad",
                             "description": "Heading of the next leg of the course",
                             "displayName": "Next Heading",
@@ -77,10 +80,20 @@ module.exports = (app) => {
                     {
                         "path": "navigation.racing.nextLegTrueWindAngle",
                         "value": {
+                            "type": "number",
                             "units": "rad",
                             "description": "TWA on the next leg of the course",
                             "displayName": "Next TWA",
                             "shortName": "NextTWA",
+                        }
+                    },
+                    {
+                        "path": "navigation.racing.startTime",
+                        "value": {
+                            "type": "string",
+                            "description": "Time of the race start",
+                            "displayName": "Start Time",
+                            "shortName": "StartTime",
                         }
                     },
                 ]
@@ -461,17 +474,21 @@ module.exports = (app) => {
                         return;
                     }
 
-                    state.timeToStart += delta;
-                    if (state.timeToStart < 0) state.timeToStart = 0;
+                    state.timeToStart = Math.max(state.timeToStart + delta, 0);
 
-                    let now = Date.now();
-                    const adjustedStart = new Date(now - (now % 1000) + state.timeToStart * 1000).toISOString();
-                    state.startTime = adjustedStart;
+                    if (state.timerRunning) {
+                        let now = Date.now();
+                        state.startTime = new Date(now - (now % 1000) + state.timeToStart * 1000).toISOString();
+                    }
 
-                    sendDeltas([
-                        {path: 'navigation.racing.timeToStart', value: state.timeToStart},
-                        {path: 'navigation.racing.startTime', value: adjustedStart}
-                    ]);
+                    const deltas = [
+                        { path: 'navigation.racing.timeToStart', value: state.timeToStart }
+                    ];
+                    if (state.timerRunning && state.startTime) {
+                        deltas.push({path: 'navigation.racing.startTime', value: state.startTime });
+                    }
+                    sendDeltas(deltas);
+
                     return complete(callback, 200, 'adjust timer: OK');
                 }
 
@@ -480,6 +497,7 @@ module.exports = (app) => {
                 }
             }
         } catch (err) {
+            app.debug('startTimerCommand:', JSON.stringify(err));
             return complete(callback, 500, 'Failed to command timer: ' + JSON.stringify(err));
         }
     }
