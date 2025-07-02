@@ -1,3 +1,6 @@
+## 0.9.9 Updates for KIP widgets
++ Do not set a start time unless timer is running
+
 ## 0.9.9 Working with KIP prototypes
  + Fixed API handlers to use return status rather than callback
 
