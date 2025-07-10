@@ -95,7 +95,7 @@ module.exports = (app) => {
                             "example": "2014-04-10T08:33:53.123Z",
                             "format": "date-time",
                             "pattern" : ".*Z$",
-                            "description": "Time of the race start",
+                            "description": "Time of the race start in RFC 3339 UTC only format ",
                             "displayName": "Start Time",
                             "shortName": "StartTime",
                         }
