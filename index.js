@@ -91,6 +91,10 @@ module.exports = (app) => {
                         "path": "navigation.racing.startTime",
                         "value": {
                             "type": "string",
+                            "units": "RFC 3339 (UTC)",
+                            "example": "2014-04-10T08:33:53.123Z",
+                            "format": "date-time",
+                            "pattern" : ".*Z$",
                             "description": "Time of the race start",
                             "displayName": "Start Time",
                             "shortName": "StartTime",
