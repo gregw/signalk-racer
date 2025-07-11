@@ -252,57 +252,61 @@ module.exports = (app) => {
 
             // Set/create the waypoint if we are configured to do so
             if (state.options.updateStartLineWaypoint || updateWaypoint) {
-                const waypointConfig = `startLine${camelCase(end)}`;
-                app.debug(`waypointConfig: ${waypointConfig}`);
-                const waypointName = state.options[waypointConfig];
-                app.debug(`waypointName: ${waypointName}`);
-                let waypointId = startLine ? startLine[end + 'Id'] : null;
-                app.debug(`waypointId: ${waypointId}`);
+                try {
+                    const waypointConfig = `startLine${camelCase(end)}`;
+                    app.debug(`waypointConfig: ${waypointConfig}`);
+                    const waypointName = state.options[waypointConfig];
+                    app.debug(`waypointName: ${waypointName}`);
+                    let waypointId = startLine ? startLine[end + 'Id'] : null;
+                    app.debug(`waypointId: ${waypointId}`);
 
-                // If we have not cached the Id of the line end, then
-                if (!waypointId) {
-                    // Get the ID of the last existing waypoint with the given name.
-                    const waypoints = await app.resourcesApi.listResources('waypoints', {});
-                    for (const [id, resource] of Object.entries(waypoints)) {
-                        if (resource.name === waypointName) {
-                            waypointId = id;
-                            // don't break here as we want the last waypoint with the given name
+                    // If we have not cached the Id of the line end, then
+                    if (!waypointId) {
+                        // Get the ID of the last existing waypoint with the given name.
+                        const waypoints = await app.resourcesApi.listResources('waypoints', {});
+                        for (const [id, resource] of Object.entries(waypoints)) {
+                            if (resource.name === waypointName) {
+                                waypointId = id;
+                                // don't break here as we want the last waypoint with the given name
+                            }
+                        }
+                        app.debug(`waypointId: ${waypointId}`);
+                    }
+
+                    app.debug(`Startline waypoint to set ${end}(${waypointName}/${waypointId}): ${JSON.stringify(position)}`);
+
+                    const waypoint = {
+                        name: waypointName,
+                        feature: {
+                            type: 'Feature',
+                            geometry: {
+                                type: 'Point',
+                                coordinates: [position.longitude, position.latitude]
+                            },
+                            properties: {}
+                        },
+                        type: end === 'port' ? 'start-pin' : 'start-boat',
+                        position: {
+                            latitude: position.latitude,
+                            longitude: position.longitude
                         }
                     }
-                    app.debug(`waypointId: ${waypointId}`);
+
+                    app.debug(`waypoint: ${waypointId} -> ${end}/${waypointName} : ${JSON.stringify(waypoint)}`);
+
+                    if (waypointId)
+                        await app.resourcesApi.setResource('waypoints', waypointId, waypoint);
+                    else if (state.options.createStartLineWaypoint)
+                        await app.resourcesApi.createResource('waypoints', waypoint);
+                    else
+                        app.debug('startline waypoint not created');
                 }
-
-                app.debug(`Startline waypoint to set ${end}(${waypointName}/${waypointId}): ${JSON.stringify(position)}`);
-
-                const waypoint = {
-                    name: waypointName,
-                    feature: {
-                        type: 'Feature',
-                        geometry: {
-                            type: 'Point',
-                            coordinates: [position.longitude, position.latitude]
-                        },
-                        properties: {}
-                    },
-                    type: end === 'port' ? 'start-pin' : 'start-boat',
-                    position: {
-                        latitude: position.latitude,
-                        longitude: position.longitude
-                    }
+                catch (err) {
+                    app.error(`Failed to set startline waypoint: ${err}`);
                 }
-
-                app.debug(`waypoint: ${waypointId} -> ${end}/${waypointName} : ${JSON.stringify(waypoint)}`);
-
-                if (waypointId)
-                    await app.resourcesApi.setResource('waypoints', waypointId, waypoint);
-                else if (state.options.createStartLineWaypoint)
-                    await app.resourcesApi.createResource('waypoints', waypoint);
-                else
-                    app.debug('startline waypoint not created');
             } else {
                 app.debug('startline waypoint not updated');
             }
-
 
             // If we have a startLine, then process position against the new line
             if (startLine)
