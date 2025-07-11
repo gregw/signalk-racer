@@ -1,3 +1,6 @@
+## 1.0.0 Release
+ + Improved documentation
+
 ## 0.9.10 Updates for KIP widgets
  + Do not set a start time unless timer is running
  + Schema RFC 3339 units for start time.

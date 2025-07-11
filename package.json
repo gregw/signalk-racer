@@ -1,11 +1,8 @@
 {
   "name": "signalk-racer",
-  "version": "0.9.10",
-  "description": "Signalk plugin to calculate values of interest to sail racers: such as Distance to Line; Next leg TWA.",
+  "version": "1.0.0",
+  "description": "Signalk plugin to calculate values of interest to sail racers: such as Time to Start, Time of Start, Distance to Line; Next leg TWA.",
   "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/gregw/signalk-racer.git"
