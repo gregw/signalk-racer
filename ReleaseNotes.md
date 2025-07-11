@@ -1,4 +1,4 @@
-## 1.0.0 Release
+## 0.9.11 Release Candidate
  + Improved documentation
 
 ## 0.9.10 Updates for KIP widgets

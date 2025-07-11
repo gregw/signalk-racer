@@ -137,6 +137,11 @@ KIP components for `racer-timer` and `racer-line` have been developed and will b
 
 ## 🔄 Dependencies
 
+### Plugins
+- [resources-provider](https://www.npmjs.com/package/@signalk/resources-provider) plugin with waypoints enabled
+- [course-provider](https://www.npmjs.com/package/@signalk/course-provider) plugin
+
+### Libraries
 - `geolib`: for distance and bearing calculations.
 
 ---
