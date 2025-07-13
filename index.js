@@ -401,12 +401,12 @@ module.exports = (app) => {
                     state.startTime = startTimestamp;
                     state.timeToStart = timeToStart;
 
+                    setTimer();
                     sendDeltas([
                         {path: 'navigation.racing.startTime', value: startTimestamp},
                         {path: 'navigation.racing.timeToStart', value: timeToStart}
                     ]);
 
-                    setTimer();
                     return complete(callback, 200, 'start timer: OK');
                 }
                 case 'reset': {
@@ -430,6 +430,7 @@ module.exports = (app) => {
                     state.timeToStart = rounded;
                     state.startTime = new Date(Date.now() + rounded * 1000).toISOString();
 
+                    setTimer();
                     sendDeltas([
                         {path: 'navigation.racing.timeToStart', value: state.timeToStart},
                         {path: 'navigation.racing.startTime', value: state.startTime}
@@ -466,12 +467,12 @@ module.exports = (app) => {
                     state.timeToStart = secondsToGo;
                     state.startTime = inputTime.toISOString();
 
+                    setTimer();
                     sendDeltas([
                         {path: 'navigation.racing.timeToStart', value: state.timeToStart},
                         {path: 'navigation.racing.startTime', value: state.startTime}
                     ]);
 
-                    setTimer();
                     return complete(callback, 200, 'set timer: OK');
                 }
 
@@ -495,6 +496,7 @@ module.exports = (app) => {
                     if (state.timerRunning && state.startTime) {
                         deltas.push({path: 'navigation.racing.startTime', value: state.startTime });
                     }
+                    setTimer();
                     sendDeltas(deltas);
 
                     return complete(callback, 200, 'adjust timer: OK');
