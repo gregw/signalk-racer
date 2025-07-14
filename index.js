@@ -37,7 +37,7 @@ module.exports = (app) => {
             },
         }
     }
-
+    const { v4: uuidv4 } = require('uuid')
     const unsubscribes = [];
 
     // Update meta data for non standard paths
@@ -214,34 +214,42 @@ module.exports = (app) => {
                 if (startLine[end].latitude === position.latitude && startLine[end].longitude === position.longitude) {
                     return complete(callback, 304, 'Put start line end: unchanged line end');
                 }
+
+                app.debug('update existing start line');
+                let newStartline = {...startLine};
+                newStartline[end] = position;
+                startLine = newStartline;
             } else {
+                app.debug('No startLine');
                 // We don't have a line, so check if this is just an update for one end of the line?
                 const thisEnd = app.getSelfPath(`navigation.racing.startLine${camelCase(end)}`);
-                if (thisEnd && thisEnd.value.lat === position.latitude && thisEnd.value.longitude === position.longitude) {
+                app.debug('thisEnd ', JSON.stringify(thisEnd));
+                if (thisEnd && thisEnd.value && thisEnd.value.latitude === position.latitude && thisEnd.value.longitude === position.longitude) {
                     return complete(callback, 304, 'Put start line end: unchanged end');
                 }
 
                 // If we now have both ends, we have a line!
                 const otherEnd = toOtherEnd(end);
+                app.debug('otherEnd ', otherEnd);
                 const otherEndPosition = app.getSelfPath(`navigation.racing.startLine${camelCase(otherEnd)}`);
+                app.debug('otherEndPosition ', otherEndPosition);
                 if (otherEndPosition && otherEndPosition.value) {
                     startLine = {};
                     startLine[end] = position;
-                    startLine[otherEnd] = otherEnd.value;
+                    startLine[otherEnd] = otherEndPosition.value;
+                    app.debug('startLine ', JSON.stringify(startLine));
                 }
             }
 
             // If we have a startLine, we can send deltas for this end and the length
             if (startLine) {
-                app.debug('update existing start line');
-                const newStartLine = {...state.startLine};
-                newStartLine[end] = position;
-                startLine.length = geolib.getPreciseDistance(newStartLine.port, newStartLine.stb, 0.1);
-                startLine.bearing = geolib.getRhumbLineBearing(newStartLine.stb, newStartLine.port);
-                state.startLine = newStartLine;
+                app.debug('send start line');
+                startLine.length = geolib.getPreciseDistance(startLine.port, startLine.stb, 0.1);
+                startLine.bearing = geolib.getRhumbLineBearing(startLine.stb, startLine.port);
+                state.startLine = startLine;
                 sendDeltas([
                     {path: `navigation.racing.startLine${camelCase(end)}`, value: position},
-                    {path: 'navigation.racing.startLineLength', value: newStartLine.length},
+                    {path: 'navigation.racing.startLineLength', value: startLine.length},
                 ]);
             } else {
                 // otherwise we can only send the delta for this end
@@ -294,10 +302,10 @@ module.exports = (app) => {
 
                     app.debug(`waypoint: ${waypointId} -> ${end}/${waypointName} : ${JSON.stringify(waypoint)}`);
 
+                    if (!waypointId && state.options.createStartLineWaypoint)
+                        waypointId = uuidv4();
                     if (waypointId)
                         await app.resourcesApi.setResource('waypoints', waypointId, waypoint);
-                    else if (state.options.createStartLineWaypoint)
-                        await app.resourcesApi.createResource('waypoints', waypoint);
                     else
                         app.debug('startline waypoint not created');
                 }
@@ -314,7 +322,7 @@ module.exports = (app) => {
             // Complete the handler successfully
             return complete(callback, 200, 'Put start line end: OK');
         } catch (err) {
-            return complete(callback, 500, 'Put start line end: Failed ' + JSON.stringify(err));
+            return complete(callback, 500, 'Put start line end: Failed ' + err);
         }
     }
 
@@ -339,22 +347,19 @@ module.exports = (app) => {
             }
 
             app.debug(`setStartLine[${end}] = ${JSON.stringify(position)} before translation/rotation`);
-            const startLine = state.startLine;
+            const startLine = state.startLine ? state.startLine : getStartLine();
 
             // Do any rotations or length changes
             if (startLine && (args.delta || args.rotate)) {
                 app.debug(`setStartLine[${end}] translate ${args.delta} and rotate ${args.rotate} of ${JSON.stringify(startLine)}`);
                 const otherEnd = startLine[toOtherEnd(end)];
                 const thisEnd = position ? position : startLine[end];
-                app.debug(`otherEnd(fixed): ${JSON.stringify(otherEnd)} thisEnd(moving): ${JSON.stringify(thisEnd)}`);
 
                 const initialBearing = geolib.getRhumbLineBearing(otherEnd, thisEnd);
                 const currentDistance = geolib.getDistance(otherEnd, thisEnd);
-                app.debug(`initialBearing: ${initialBearing} currentDistance: ${currentDistance}`);
 
                 const newDistance = args.delta && typeof args.delta === 'number' ? (currentDistance + args.delta) : currentDistance;
                 const newBearing = args.rotate && typeof args.rotate === 'number' ? (initialBearing + toDegrees(args.rotate)) : initialBearing;
-                app.debug(`newDistance: ${newDistance} newBearing: ${newBearing}`);
 
                 const newPosition = geolib.computeDestinationPoint(otherEnd, newDistance, newBearing);
                 app.debug(`Moved/Rotated ${end} from ${JSON.stringify(position)} to ${JSON.stringify(newPosition)}`);
@@ -365,7 +370,7 @@ module.exports = (app) => {
                 return putStartLineEnd(end, position, callback, args.updateWaypoint === true);
             return complete(callback, 500, 'Failed to set the startLine: No position');
         } catch (err) {
-            return complete(callback, 500, 'Failed to set the startLine: ' + JSON.stringify(err));
+            return complete(callback, 500, 'Failed to set the startLine: ' + err);
         }
     }
 
@@ -554,16 +559,16 @@ module.exports = (app) => {
                     app.debug(`STARTLINE: undefined`);
                     state.startLine = null;
                 }
-
-                sendDeltas([
+                const deltas = [
                     {path: 'navigation.racing.startLinePort', value: startLine.port},
                     {path: 'navigation.racing.startLineStb', value: startLine.stb},
                     {path: 'navigation.racing.startLineLength', value: startLine.length},
-                ]);
-
-                processPosition(position);
-                processWind()
-
+                ].filter(entry => entry.value !== null && entry.value !== undefined);
+                if (deltas.length > 0) {
+                    sendDeltas(deltas);
+                    processPosition(position);
+                    processWind();
+                }
             }).catch(err => {
                 app.error(err);
             });
@@ -680,10 +685,9 @@ module.exports = (app) => {
                 const [fromLongitude, fromLatitude] = coordinates[activeRoute.pointIndex];
                 const [toLongitude, toLatitude] = coordinates[activeRoute.pointIndex + 1];
                 app.debug(`from: {longitude:${fromLongitude}, latitude:${fromLatitude}}, to: {longitude:${toLongitude}, latitude:${toLatitude}}`);
-                const nextLegHeading = geolib.getRhumbLineBearing({
-                    latitude: fromLatitude,
-                    longitude: fromLongitude
-                }, {latitude: toLatitude, longitude: toLongitude});
+                const nextLegHeading = geolib.getRhumbLineBearing(
+                    {latitude: fromLatitude, longitude: fromLongitude},
+                    {latitude: toLatitude, longitude: toLongitude});
                 app.debug(`nextLegHeading: ${nextLegHeading}`);
 
                 activeRoute.nextLegHeading = nextLegHeading;
@@ -700,6 +704,20 @@ module.exports = (app) => {
                 {path: 'navigation.racing.nextLegHeading', value: null}
             ]);
         }
+    }
+
+    function getStartLine() {
+        const stbEnd = app.getSelfPath(`navigation.racing.startLineStb`);
+        const portEnd = app.getSelfPath(`navigation.racing.startLinePort`);
+        if (stbEnd && stbEnd.value && portEnd && portEnd.value) {
+            startLine = { stb: stbEnd.value, port: portEnd.value};
+            startLine.length = geolib.getPreciseDistance(startLine.port, startLine.stb, 0.1);
+            startLine.bearing = geolib.getRhumbLineBearing(startLine.stb, startLine.port);
+            state.startLine = startLine;
+            app.debug('found startLine ', JSON.stringify(startLine));
+            return startLine;
+        }
+        return null;
     }
 
     // Return the plugin
@@ -722,6 +740,7 @@ module.exports = (app) => {
             state.gpsFromBow = fromBow ? fromBow.value : null;
             state.gpsFromCenter = fromCenter ? fromCenter.value : null;
             state.timeToStart = options.timer;
+            state.startLine = getStartLine();
 
             sendDeltas([{path: 'navigation.racing.timeToStart', value: state.timeToStart}]);
 
@@ -898,6 +917,7 @@ module.exports = (app) => {
         stop: () => {
             unsubscribes.forEach((f) => f());
             unsubscribes.length = 0;
+            state.startLine = null;
         },
 
         schema: () => racerSchema,

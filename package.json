@@ -24,6 +24,7 @@
   },
   "homepage": "https://github.com/gregw/signalk-racer#readme",
   "dependencies": {
-    "geolib": "^3.3.4"
+    "geolib": "^3.3.4",
+    "uuid": "^8.1.0"
   }
 }

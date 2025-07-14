@@ -1,3 +1,7 @@
+## 0.9.12 No waypoints
+ + improve no waypoint handling
+ + fix create waypoint
+
 ## 0.9.11 Release Candidate
  + Improved documentation
 
