@@ -1,3 +1,8 @@
+## 1.0.0 GA Release
+ + handle reverse routes
+ + Improve startAt date handling
+ + persist timer over plugin restart
+
 ## 0.9.12 No waypoints
  + improve no waypoint handling
  + fix create waypoint

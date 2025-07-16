@@ -44,11 +44,9 @@
 
         .port-set    { background-color: #f88; color: black; font-size: 1em;}
         .port-move   { background-color: #a00; color: white; }
-        .port-tweak   { background-color: #f44; color: white; }
         .port-rotate { background-color: #a00; color: white; }
         .stb-set     { background-color: #8f8; color: black; font-size: 1em; }
         .stb-move    { background-color: #080; color: white;}
-        .stb-tweak    { background-color: #4c4; color: white; }
         .stb-rotate  { background-color: #080; color: white; }
 
     </style>
@@ -92,9 +90,9 @@
             }));
         };
 
-        socket.onerror = (err) => updateStatus('❌ WebSocket error: ' + err.message);
+        socket.onerror = (err) => updateStatus('WebSocket error: ' + err.message);
         socket.onclose = () => {
-            updateStatus('❌ Disconnected. Retrying in 5s...');
+            updateStatus('Disconnected. Retrying in 5s...');
             setTimeout(connectWebSocket, 5000);
         };
 
@@ -142,7 +140,7 @@
 
     function sendSetStartLine(end) {
         if (!socket || socket.readyState !== WebSocket.OPEN) {
-            updateStatus('❌ WebSocket not connected.');
+            updateStatus('WebSocket not connected.');
             return;
         }
         let message = JSON.stringify({
@@ -154,12 +152,12 @@
         });
         console.log("sendSetStartLine: " + message);
         socket.send(message);
-        updateStatus(`⏳ Sent request to set ${end}`);
+        updateStatus(`Sent request to set ${end}`);
     }
 
     function sendAdjustStartLine(end, delta, rotate) {
         if (!socket || socket.readyState !== WebSocket.OPEN) {
-            updateStatus('❌ WebSocket not connected.');
+            updateStatus('WebSocket not connected.');
             return;
         }
         const message = JSON.stringify({
@@ -171,7 +169,7 @@
         });
         console.log("sendAdjustStartLine: " + message);
         socket.send(message);
-        updateStatus(`⏳ Sent ${delta}m ${rotate}° request for ${end}`);
+        updateStatus(`Sent ${delta}m ${rotate}° request for ${end}`);
     }
 
     connectWebSocket();
@@ -184,7 +182,7 @@
 
     function adjustStartTime(deltaSeconds) {
         if (!socket || socket.readyState !== WebSocket.OPEN) {
-            updateStatus('❌ WebSocket not connected.');
+            updateStatus('WebSocket not connected.');
             return;
         }
         socket.send(JSON.stringify({
@@ -197,35 +195,45 @@
                 }
             }
         }));
-        updateStatus(`⏳ Sent delta timeToStart: ${deltaSeconds} sec`);
+        updateStatus(`Sent delta timeToStart: ${deltaSeconds} sec`);
     }
 
     function setStartTime() {
         if (!socket || socket.readyState !== WebSocket.OPEN) {
-            updateStatus('❌ WebSocket not connected.');
+            updateStatus('WebSocket not connected.');
             return;
         }
 
-        const date = startTime ? new Date(startTime) : new Date();
-        const [hours, minutes, seconds] = document.getElementById('startTime').value.split(':').map(Number);
-        date.setHours(hours, minutes, seconds, 0);
+        try {
+            const now = new Date();
+            const parts = document.getElementById('startTime').value.split(':').map(Number);
+            const hours = parts[0];
+            const minutes = parts[1];
+            const seconds = parts.length >= 3 ? parts[2] : 0;
+            const date = new Date(now);
+            date.setHours(hours, minutes, seconds, 0);
+            if (date <= now)
+                date.setDate(date.getDate() + 1);
 
-        socket.send(JSON.stringify({
-            context: 'vessels.self',
-            put: {
-                path: 'navigation.racing.setStartTime',
-                value: {
-                    command: 'set',
-                    startTime : date.toISOString(),
+            socket.send(JSON.stringify({
+                context: 'vessels.self',
+                put: {
+                    path: 'navigation.racing.setStartTime',
+                    value: {
+                        command: 'set',
+                        startTime: date.toISOString(),
+                    }
                 }
-            }
-        }));
-        updateStatus(`⏳ Sent start time: ${startTime}`);
+            }));
+            updateStatus(`Sent start time: ${startTime}`);
+        } catch (err) {
+            console.log('Could not set start at ', err);
+        }
     }
 
     function sendTimerCommand(command) {
         if (!socket || socket.readyState !== WebSocket.OPEN) {
-            updateStatus('❌ WebSocket not connected.');
+            updateStatus('WebSocket not connected.');
             return;
         }
         socket.send(JSON.stringify({
@@ -235,16 +243,8 @@
                 value: { command }
             }
         }));
-        updateStatus(`⏳ Sent timer command: ${command}`);
+        updateStatus(`Sent timer command: ${command}`);
     }
-
-    setInterval(() => {
-        if (timeToStart !== null && timeToStart > 0) {
-            timeToStart--;
-            updateTimerDisplay();
-        }
-    }, 1000);
-
 </script>
 
 <div style="display: flex; justify-content: center; align-items: center; gap: 3em; flex-wrap: wrap;">

@@ -488,7 +488,11 @@ module.exports = (app) => {
                         return;
                     }
 
-                    state.timeToStart = Math.max(state.timeToStart + delta, 0);
+                    const nextTimeToStart = state.timeToStart + delta;
+                    if (nextTimeToStart <= 1) {
+                        return;
+                    }
+                    state.timeToStart = nextTimeToStart;
 
                     if (state.timerRunning) {
                         let now = Date.now();
@@ -501,7 +505,9 @@ module.exports = (app) => {
                     if (state.timerRunning && state.startTime) {
                         deltas.push({path: 'navigation.racing.startTime', value: state.startTime });
                     }
-                    setTimer();
+                    if (delta % 60 !== 0)
+                        setTimer();
+
                     sendDeltas(deltas);
 
                     return complete(callback, 200, 'adjust timer: OK');
@@ -577,6 +583,23 @@ module.exports = (app) => {
         }
     }
 
+    function isNearLineInRoute() {
+        // e.g. {
+        //   "href":"/resources/routes/a12eefe7-8fd3-49f7-81af-ce1f3440d3ff",
+        //   "name":"Course 1",
+        //   "reverse":false,
+        //   "pointIndex":1,
+        //   "pointTotal":5
+        // }
+
+        const activeRoute = state.activeRoute;
+        if (!activeRoute)
+            return true;
+        if (activeRoute.pointIndex < 2)
+            return true;
+        return activeRoute.pointIndex + 2 >= activeRoute.pointTotal;
+    }
+
     function processPosition(position) {
         if (!position) {
             position = app.getSelfPath('navigation.position');
@@ -587,7 +610,7 @@ module.exports = (app) => {
         const startLine = state.startLine;
 
         app.debug(`processPosition ${JSON.stringify(position)} to ${JSON.stringify(startLine)}`);
-        if (position && startLine && (!state.activeRoute || state.activeRoute.pointIndex < 2)) {
+        if (position && startLine && isNearLineInRoute()) {
             // handle the bow offset
             const bow = bowPosition(position);
 
@@ -652,19 +675,16 @@ module.exports = (app) => {
 
         let nextTwa = null;
         const activeRoute = state.activeRoute;
-        if (activeRoute) {
-            const nextLegHeading = activeRoute.nextLegHeading;
-            if (nextLegHeading) {
-                nextTwa = (540 + toDegrees(twd) - nextLegHeading) % 360 - 180;
-                app.debug(`nextTwa: ${nextTwa}`);
-            }
+        if (activeRoute && activeRoute.nextLegHeading) {
+            nextTwa = (540 + toDegrees(twd) - activeRoute.nextLegHeading) % 360 - 180;
+            app.debug(`nextTwa: ${nextTwa}`);
         }
 
         let bias = null;
         const startLine = state.startLine;
-        if (startLine && (!activeRoute || activeRoute.pointIndex < 2)) {
+        if (startLine && isNearLineInRoute()) {
             app.debug(`processWind ${twd} to ${JSON.stringify(startLine)}`);
-            bias = startLine.length * Math.cos(toRadians(startLine.bearing) - (twd + Math.PI));
+            bias = - startLine.length * Math.cos(toRadians(startLine.bearing) - (twd + Math.PI));
         }
 
         sendDeltas([
@@ -674,16 +694,50 @@ module.exports = (app) => {
     }
 
     function processRoute(activeRoute) {
-        if (activeRoute && (activeRoute.pointIndex + 1) < activeRoute.pointTotal) {
+        if (activeRoute) {
             // e.g. {"href":"/resources/routes/a12eefe7-8fd3-49f7-81af-ce1f3440d3ff","name":"Course 1","reverse":false,"pointIndex":1,"pointTotal":5}
+            const nextPointIndex = activeRoute.pointIndex + 1;
+            if (nextPointIndex < 0 || nextPointIndex === activeRoute.pointTotal) {
+              activeRoute.nextLegHeading = null;
+              sendDeltas([
+                {path: 'navigation.racing.nextLegHeading', value: null},
+                {path: 'navigation.racing.nextLegTrueWindAngle', value: null}
+              ]);
+              processPosition();
+              return;
+            }
+
             const routeId = activeRoute.href.split('/').pop(); //  e.g. "a12eefe7-8fd3-49f7-81af-ce1f3440d3ff"
             app.debug('processRoute:' + routeId);
             app.resourcesApi.getResource('routes', routeId).then(route => {
                 app.debug('found active route:', JSON.stringify(route));
-                // e.g. {name:"Course 1",description:"Test race course",distance:3027,feature:{type:"Feature",geometry:{type:"LineString",coordinates:[[151.2789194160523,-33.80427227074185],[151.28230238234357,-33.813458268981435],[151.2758044350174,-33.80201284252691],[151.27864400784992,-33.801915364141514],[151.27982384226053,-33.80429179893497]]},properties:{coordinatesMeta:[{href:"/resources/waypoints/bb35d9d0-c04e-4721-89f2-a1d8e697ab81"},{href:"/resources/waypoints/65082ddd-6fa6-4538-9a01-49d5d795b0bb"},{href:"/resources/waypoints/0bbce508-67c6-4f03-8de0-fb0532f88917"},{href:"/resources/waypoints/602ee562-c6dc-42c3-a775-512597063ca4"},{href:"/resources/waypoints/2e3cf194-8835-498d-abaa-a5d2104550b3"}]},id:""},timestamp:"2025-06-09T22:22:54.739Z",$source:"resources-provider"}
+                // e.g. {
+                // name:"Course 1",
+                // description:"Test race course",
+                // distance:3027,
+                // feature:{
+                //   type:"Feature",
+                //   geometry:{
+                //     type:"LineString",
+                //     coordinates:[[151.27,-33.80],[151.28,-33.81],[151.27,-33.80],[151.27,-33.80],[151.27,-33.80]]},
+                //     properties:{
+                //       coordinatesMeta:[
+                //         {href:"/resources/waypoints/bb35d9d0-c04e-4721-89f2-a1d8e697ab81"},
+                //         {href:"/resources/waypoints/65082ddd-6fa6-4538-9a01-49d5d795b0bb"},
+                //         {href:"/resources/waypoints/0bbce508-67c6-4f03-8de0-fb0532f88917"},
+                //         {href:"/resources/waypoints/602ee562-c6dc-42c3-a775-512597063ca4"},
+                //         {href:"/resources/waypoints/2e3cf194-8835-498d-abaa-a5d2104550b3"}
+                //       ]
+                //     },
+                //     id:""
+                //   },
+                //   timestamp:"2025-06-09T22:22:54.739Z",
+                //   $source:"resources-provider"}
                 const coordinates = route.feature.geometry.coordinates;
-                const [fromLongitude, fromLatitude] = coordinates[activeRoute.pointIndex];
-                const [toLongitude, toLatitude] = coordinates[activeRoute.pointIndex + 1];
+                const fromIndex = activeRoute.reverse ? activeRoute.pointTotal - activeRoute.pointIndex - 1 : activeRoute.pointIndex;
+                const toIndex = activeRoute.reverse ? activeRoute.pointTotal - nextPointIndex - 1 : nextPointIndex;
+                const [fromLongitude, fromLatitude] = coordinates[fromIndex];
+                const [toLongitude, toLatitude] = coordinates[toIndex];
                 app.debug(`from: {longitude:${fromLongitude}, latitude:${fromLatitude}}, to: {longitude:${toLongitude}, latitude:${toLatitude}}`);
                 const nextLegHeading = geolib.getRhumbLineBearing(
                     {latitude: fromLatitude, longitude: fromLongitude},
@@ -693,16 +747,20 @@ module.exports = (app) => {
                 activeRoute.nextLegHeading = nextLegHeading;
                 state.activeRoute = activeRoute;
                 sendDeltas([
-                    {path: 'navigation.racing.nextLegHeading', value: toRadians(nextLegHeading)}
+                    {path: 'navigation.racing.nextLegHeading', value: toRadians(nextLegHeading)},
+                    {path: 'navigation.racing.nextLegTrueWindAngle', value: null}
                 ]);
+                processWind();
             }).catch(err => {
                 app.error(err);
             });
         } else {
             state.activeRoute = null;
             sendDeltas([
-                {path: 'navigation.racing.nextLegHeading', value: null}
+                {path: 'navigation.racing.nextLegHeading', value: null},
+                {path: 'navigation.racing.nextLegTrueWindAngle', value: null}
             ]);
+            processPosition(null);
         }
     }
 
@@ -742,6 +800,23 @@ module.exports = (app) => {
             state.timeToStart = options.timer;
             state.startLine = getStartLine();
 
+            // Is the timer already started
+            {
+                const startTime = app.getSelfPath('navigation.racing.startTime');
+                if (startTime && startTime.value) {
+                    state.startTime = startTime.value;
+                    const now = Date.now();
+                    const startAtTime = new Date(startTime.value);
+                    if (startAtTime > now) {
+                        state.timeToStart = Math.round((new Date(state.startTime) - now) / 1000);
+                        state.timerRunning = true;
+                    } else {
+                        state.timeToStart = 0;
+                        state.timerRunning = false;
+                    }
+                }
+            }
+
             sendDeltas([{path: 'navigation.racing.timeToStart', value: state.timeToStart}]);
 
             // Subscribe to position updates.
@@ -762,7 +837,7 @@ module.exports = (app) => {
 
                 (delta) => {
                     app.debug('DELTA POSITIONS ' + JSON.stringify(delta));
-                    position = null;
+                    let position = null;
                     delta.updates.forEach((u) => {
                         u.values.forEach((v) => {
                             app.debug('DELTA POSITION ' + v.path + ' = ' + JSON.stringify(v.value));
@@ -863,8 +938,7 @@ module.exports = (app) => {
                             app.debug("DELTA ACTIVE ROUTE: " + v.path + ' = ' + JSON.stringify(route));
                         })
                     });
-                    if (route)
-                        processRoute(route);
+                    processRoute(route);
                 }
             );
 
