@@ -1,4 +1,4 @@
-## 1.0.0 GA Release
+## 0.9.13 GA Release Candidate
  + handle reverse routes
  + Improve startAt date handling
  + persist timer over plugin restart
