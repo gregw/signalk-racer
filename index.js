@@ -105,7 +105,7 @@ module.exports = (app) => {
         ]
     });
 
-    // send multiple deltas, each in the form of { path, value, units?}
+    // send multiple deltas, each in the form of { path, value }
     function sendDeltas(updatesArray) {
         const timestamp = new Date().toISOString();
 
@@ -199,14 +199,12 @@ module.exports = (app) => {
         app.debug(`putStartLineEnd: ${end} ${JSON.stringify(position)}`);
 
         try {
-            if (!end || !position || typeof position.latitude !== 'number' || typeof position.longitude !== 'number') {
+            if (!end || !position || typeof position.latitude !== 'number' || typeof position.longitude !== 'number')
                 return complete(callback, 400, 'Failed to put start line end: !end || !position');
-            }
 
             end = end.toLowerCase();
-            if (end !== 'port' && end !== 'stb') {
+            if (end !== 'port' && end !== 'stb')
                 return complete(callback, 400, 'Failed to put start line end: unknown end');
-            }
 
             let startLine = state.startLine;
             if (startLine) {
@@ -427,9 +425,8 @@ module.exports = (app) => {
                 }
 
                 case 'sync': {
-                    if (!state.timerRunning || state.timeToStart == null) {
+                    if (!state.timerRunning || state.timeToStart == null)
                         return complete(callback, 500, 'sync timer: !running');
-                    }
 
                     const rounded = Math.round(state.timeToStart / 60) * 60;
                     state.timeToStart = rounded;
@@ -483,15 +480,16 @@ module.exports = (app) => {
 
                 case 'adjust': {
                     const delta = Number(args.delta);
-                    if (isNaN(delta) || state.timeToStart == null || !state.startTime) {
-                        cb(null, {state: 'FAILED', message: 'Cannot adjust: invalid state or delta'});
-                        return;
-                    }
+                    if (isNaN(delta))
+                        return complete(callback, 400, 'reset timer: Cannot adjust invalid delta');
+
+                    if (state.timeToStart == null)
+                        return complete(callback, 400, 'reset timer: Cannot adjust start time');
 
                     const nextTimeToStart = state.timeToStart + delta;
-                    if (nextTimeToStart <= 1) {
+                    if (nextTimeToStart <= 1)
                         return;
-                    }
+
                     state.timeToStart = nextTimeToStart;
 
                     if (state.timerRunning) {
@@ -518,8 +516,8 @@ module.exports = (app) => {
                 }
             }
         } catch (err) {
-            app.debug('startTimerCommand:', JSON.stringify(err));
-            return complete(callback, 500, 'Failed to command timer: ' + JSON.stringify(err));
+            app.debug('startTimerCommand:', err);
+            return complete(callback, 500, 'Failed to command timer: ' + err.message);
         }
     }
 
@@ -659,6 +657,7 @@ module.exports = (app) => {
             state.distanceToLine = null;
             sendDeltas([
                 {path: 'navigation.racing.distanceStartline', value: null},
+                {path: 'navigation.racing.startLineBias', value: null},
             ]);
         }
     }
