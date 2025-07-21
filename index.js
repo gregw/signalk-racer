@@ -462,7 +462,7 @@ module.exports = (app) => {
                             {path: 'navigation.racing.timeToStart', value: 0},
                             {path: 'navigation.racing.startTime', value: null}
                         ]);
-                        return complete(callback, 200, 'set timer: 0K');
+                        return complete(callback, 200, 'set timer: Ignored negative start time');
                     }
 
                     state.timerRunning = true;
@@ -481,14 +481,14 @@ module.exports = (app) => {
                 case 'adjust': {
                     const delta = Number(args.delta);
                     if (isNaN(delta))
-                        return complete(callback, 400, 'reset timer: Cannot adjust invalid delta');
+                        return complete(callback, 400, 'adjust timer: Cannot adjust invalid delta');
 
                     if (state.timeToStart == null)
-                        return complete(callback, 400, 'reset timer: Cannot adjust start time');
+                        return complete(callback, 400, 'adjust timer: Cannot adjust start time');
 
                     const nextTimeToStart = state.timeToStart + delta;
-                    if (nextTimeToStart <= 1)
-                        return;
+                    if (nextTimeToStart <= 0)
+                        return complete(callback, 200, 'adjust timer: Ignored negative start time');
 
                     state.timeToStart = nextTimeToStart;
 
@@ -957,23 +957,25 @@ module.exports = (app) => {
                 (delta) => {
                     app.debug('DELTAS START LINE ENDS ' + JSON.stringify(delta));
                     delta.updates.forEach((u) => {
-                        u.values.forEach((v) => {
-                            app.debug(`DELTA START LINE END from ${u.source.label}: ${v.path} = ${JSON.stringify(v.value)}`);
-                            if (u.source && u.source.label && u.source.label !== 'signalk-racer') {
-                                switch (v.path) {
-                                    case 'navigation.racing.startLinePort' :
-                                        putStartLineEnd('port', v.value, ignored => {
-                                        }, false).then(ignored => {
-                                        });
-                                        break;
-                                    case 'navigation.racing.startLineStb' :
-                                        putStartLineEnd('port', v.value, ignored => {
-                                        }, false).then(ignored => {
-                                        });
-                                        break;
+                        if (u.values) {q
+                            u.values.forEach((v) => {
+                                app.debug(`DELTA START LINE END from ${u.source.label}: ${v.path} = ${JSON.stringify(v.value)}`);
+                                if (u.source && u.source.label && u.source.label !== 'signalk-racer') {
+                                    switch (v.path) {
+                                        case 'navigation.racing.startLinePort' :
+                                            putStartLineEnd('port', v.value, ignored => {
+                                            }, false).then(ignored => {
+                                            });
+                                            break;
+                                        case 'navigation.racing.startLineStb' :
+                                            putStartLineEnd('port', v.value, ignored => {
+                                            }, false).then(ignored => {
+                                            });
+                                            break;
+                                    }
                                 }
-                            }
-                        })
+                            });
+                        }
                     });
                 }
             );
