@@ -957,7 +957,7 @@ module.exports = (app) => {
                 (delta) => {
                     app.debug('DELTAS START LINE ENDS ' + JSON.stringify(delta));
                     delta.updates.forEach((u) => {
-                        if (u.values) {q
+                        if (u.values) {
                             u.values.forEach((v) => {
                                 app.debug(`DELTA START LINE END from ${u.source.label}: ${v.path} = ${JSON.stringify(v.value)}`);
                                 if (u.source && u.source.label && u.source.label !== 'signalk-racer') {
