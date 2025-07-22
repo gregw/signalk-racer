@@ -1,6 +1,6 @@
 # Signal K Racing Plugin
 
-This plugin adds sail racing-relevant data to a Signal K server. It focuses on real-time information useful during the start of a race, such as:
+This plugin adds sail racing relevant data to a Signal K server. It focuses on real-time information useful during the start of a race, such as:
  + A server side race timer that can be displayed on multiple screens and be finely adjusted
  + A mechanism to set and adjust the start line using waypoints and REST commands
  + Calculation of the distance to the line.
@@ -26,7 +26,8 @@ This plugin calculates and publishes the following Signal K paths:
 | `navigation.racing.`<br/>`timeToStart`          | Period of time until the race start                    | `s`                    | Y   |
 | `navigation.racing.`<br/>`startTime`            | The start time as an ISO timestamp                     | `rfc3339`              |     |
 
-These values can be displayed in KIP widgets, Freeboard-SK, or other Signal K clients.
+These values can be displayed in KIP widgets, Freeboard-SK, or other Signal K clients.  
+There are dedicated widgets for the start timer and line adjustment since 3.5.0 of KIP 
 
 ![KIP and Freeboard Screenshot](racer-kip.png)
 
@@ -95,7 +96,7 @@ If `navigation.headingTrue` is not available, then `navigation.courseOverGroundT
 
 ## 🌐 API Access
 
-This plugin uses WebSocket-based PUT requests to Signal K model paths.
+This plugin uses the following WebSocket-based PUT requests to Signal K model paths.
 
 ### `navigation.racing.setStartLine`
 
@@ -133,13 +134,15 @@ Used to **start**, **sync**, **reset**, or **set a fixed start time**.
 ---
 
 ## 🧩 KIP Widgets
-KIP components for `racer-timer` and `racer-line` have been developed and are available release 3.X.Y of KIP.
+KIP components for `racer-timer` and `racer-line` have been developed and are available from release 3.5.0 of KIP.
 
 ## 🔄 Dependencies
 
 ### Plugins
+- [KIP >= 3.5.0](https://github.com/mxtommy/Kip) for graphic widget support
+- [FreeboardSK](https://github.com/SignalK/freeboard-sk#readme) for graphic display of the start line
 - [resources-provider](https://www.npmjs.com/package/@signalk/resources-provider) plugin with waypoints enabled
-- [course-provider](https://www.npmjs.com/package/@signalk/course-provider) plugin
+- [course-provider](https://www.npmjs.com/package/@signalk/course-provider) plugin to enable the next leg calculations
 
 ### Libraries
 - `geolib`: for distance and bearing calculations.
@@ -151,7 +154,6 @@ KIP components for `racer-timer` and `racer-line` have been developed and are av
 - Add calculations for:
 - **Time to line** (using STW and heading or polar speeds)
 - **Laylines** and distance/time to them
-- Better integration with **Freeboard-SK** and **KIP** dashboards
 
 --- 
 ## 📬 Feedback
