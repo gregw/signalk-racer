@@ -683,7 +683,7 @@ module.exports = (app) => {
         const startLine = state.startLine;
         if (startLine && isNearLineInRoute()) {
             app.debug(`processWind ${twd} to ${JSON.stringify(startLine)}`);
-            bias = - startLine.length * Math.cos(toRadians(startLine.bearing) - (twd + Math.PI));
+            bias = - startLine.length * Math.cos(toRadians(startLine.bearing) - twd);
         }
 
         sendDeltas([
