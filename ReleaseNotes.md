@@ -1,3 +1,4 @@
+## 1.0.0 GA Release with KIP Widgets
  + Fixed bias to be towards wind
 
 ## 0.9.13 GA Release Candidate

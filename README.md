@@ -28,7 +28,7 @@ This plugin calculates and publishes the following Signal K paths:
 
 These values can be displayed in KIP widgets, Freeboard-SK, or other Signal K clients.
 
-![KIP and Freeboard Screenshot](kip-freeboard-screenshot.png)
+![KIP and Freeboard Screenshot](racer-kip.png)
 
 There is also a webapp to adjust the line and timer.
 
@@ -133,7 +133,7 @@ Used to **start**, **sync**, **reset**, or **set a fixed start time**.
 ---
 
 ## 🧩 KIP Widgets
-KIP components for `racer-timer` and `racer-line` have been developed and will be available in a future release of KIP.
+KIP components for `racer-timer` and `racer-line` have been developed and are available release 3.X.Y of KIP.
 
 ## 🔄 Dependencies
 
