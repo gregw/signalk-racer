@@ -18,12 +18,12 @@ module.exports = (app) => {
             updateStartLineWaypoint: {
                 type: 'boolean',
                 title: 'Update the start line waypoints if the startLine is updated',
-                default: 'true'
+                default: true
             },
             createStartLineWaypoint: {
                 type: 'boolean',
                 title: 'Create the start line waypoints if the startLine is updated and the waypoint does not exist',
-                default: 'true'
+                default: true
             },
             period: {
                 type: 'number',

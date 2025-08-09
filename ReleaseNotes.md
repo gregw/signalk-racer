@@ -1,3 +1,6 @@
+## 1.0.1 Fix initial configuration
+ + Fixed default values of initial configuration
+
 ## 1.0.0 GA Release with KIP Widgets
  + Fixed bias to be towards wind
 
