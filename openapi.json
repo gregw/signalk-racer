@@ -69,6 +69,80 @@
           }
         }
       }
+    },
+
+    "/signalk/v1/api/vessels/self/navigation/racing/lines": {
+      "get": {
+        "summary": "List available named start lines",
+        "description": "Returns the currently active start line and a list of configured line names with optional descriptions.",
+        "responses": {
+          "200": {
+            "description": "List of line names",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "startLineName": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "Currently selected line name, or null for default"
+                    },
+                    "lines": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "startLineName": { "type": "string" },
+                          "startLineDescription": {
+                            "type": "string",
+                            "nullable": true
+                          }
+                        },
+                        "required": ["startLineName"]
+                      }
+                    }
+                  },
+                  "required": ["activeStartLineName", "lines"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "/signalk/v1/api/vessels/self/navigation/racing/setStartLineName": {
+      "put": {
+        "summary": "Select a named start line to use",
+        "description": "Set the active start line by name, or set null to revert to the default line.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "startLineName": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Line name to activate, or null to use the default"
+                  }
+                },
+                "required": ["startLineName"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Active line updated"
+          },
+          "400": {
+            "description": "Invalid line name (not found)"
+          }
+        }
+      }
     }
   }
 }

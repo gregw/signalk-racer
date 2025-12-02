@@ -10,8 +10,9 @@
             color: white; /* optional for visibility */
         }
 
-        .button-timer-command    { background-color: #041b8e; color: white; font-size: 1em; font-weight: bold; }
-        .button-timer-adjust   { background-color: #2196F3; color: white; }
+        .button-timer-command { background-color: #041b8e; color: white; font-size: 1em; font-weight: bold; }
+        .button-timer-adjust  { background-color: #2196F3; color: white; }
+
         button {
             padding: 1em 1em;
             font-size: 1em;
@@ -26,16 +27,13 @@
             margin: 1em auto;
             text-align: center;
         }
-        button {
-            padding: 1em 1em;
-            font-size: 1em;
-            cursor: pointer;
-        }
+
         input[readonly] {
             background: #eee;
             border: 1px solid #ccc;
             padding: 0.3em;
         }
+
         #status {
             margin-top: 1em;
             font-size: 1em;
@@ -49,6 +47,12 @@
         .stb-move    { background-color: #080; color: white;}
         .stb-rotate  { background-color: #080; color: white; }
 
+        #startLineSelect {
+            font-size: 1em;
+            padding: 0.3em;
+            margin-left: 0.5em;
+        }
+
     </style>
 </head>
 <body>
@@ -57,8 +61,10 @@
     let socket;
     let statusTimer;
     let startTime;
+
     function updateStatus(message) {
         const status = document.getElementById('status');
+        if (!status) return;
         status.textContent = message;
         if (statusTimer) clearTimeout(statusTimer);
         statusTimer = setTimeout(() => {
@@ -103,10 +109,10 @@
                     if (update.values) {
                         update.values.forEach(value => {
                             switch (value.path) {
-                                case "navigation.racing.startLineLength" :
+                                case "navigation.racing.startLineLength":
                                     // document.getElementById("lineLength").value = value.value.toFixed(1);
                                     break;
-                                case "navigation.racing.stbLineBias" :
+                                case "navigation.racing.stbLineBias":
                                     // document.getElementById("lineBias").value = value.value.toFixed(1);
                                     break;
                                 case "navigation.racing.timeToStart":
@@ -172,7 +178,97 @@
         updateStatus(`Sent ${delta}m ${rotate}° request for ${end}`);
     }
 
+    function loadStartLines() {
+        const url = window.location.origin +
+            '/signalk/v1/api/vessels/self/navigation/racing/lines';
+
+        fetch(url)
+            .then(res => {
+                if (!res.ok) {
+                    throw new Error('HTTP ' + res.status);
+                }
+                return res.json();
+            })
+            .then(data => {
+                const select = document.getElementById('startLineSelect');
+                if (!select) return;
+
+                // Clear existing options
+                select.innerHTML = '';
+
+                // Default option = "no named line"
+                const defaultOpt = document.createElement('option');
+                defaultOpt.value = '';
+                defaultOpt.textContent = 'Default line';
+                select.appendChild(defaultOpt);
+
+                if (Array.isArray(data.value.lines)) {
+                    data.value.lines.forEach(line => {
+                        const opt = document.createElement('option');
+                        opt.value = line.startLineName;
+                        opt.textContent = line.startLineDescription
+                            ? `${line.startLineName} – ${line.startLineDescription}`
+                            : line.startLineName;
+                        select.appendChild(opt);
+                    });
+                }
+
+                // Preselect active
+                if (!data.value.startLineName) {
+                    select.value = '';
+                } else {
+                    select.value = data.value.startLineName;
+                    if (select.value !== data.value.startLineName) {
+                        // In case active name not in the list
+                        select.value = '';
+                    }
+                }
+
+                updateStatus('Loaded start lines: ' + data.value.lines.length + ' lines');
+            })
+            .catch(err => {
+                console.error('Failed to load start lines:', err);
+                updateStatus('Failed to load start lines: ' + err.message);
+            });
+    }
+
+    function setStartLineName(startLineName) {
+        const url = window.location.origin +
+            '/signalk/v1/api/vessels/self/navigation/racing/setStartLineName';
+
+        const body = {
+            value: {
+                startLineName: startLineName === '' ? null : startLineName
+            }
+        };
+
+        fetch(url, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        })
+            .then(res => {
+                if (!res.ok) {
+                    throw new Error('HTTP ' + res.status);
+                }
+                return res.json().catch(() => ({}));
+            })
+            .then(() => {
+                updateStatus(
+                    startLineName
+                        ? `Active line set to: ${startLineName}`
+                        : 'Active line set to Default'
+                );
+            })
+            .catch(err => {
+                console.error('Failed to set active line:', err);
+                updateStatus('Failed to set active line: ' + err.message);
+            });
+    }
+
+    // connect WS and load lines once the page is running
     connectWebSocket();
+    loadStartLines();
 
     function formatTimeToMMSS(seconds) {
         const mm = Math.floor(seconds / 60);
@@ -278,10 +374,11 @@
     </div>
 </div>
 
-<!-- Timer Display -->
-<!-- div style="margin-top: 2em;">
-    <div id="timeToStart" style="font-size: 4em; font-weight: bold;">00:00</div>
-</div -->
+<!-- Start-line selector -->
+<div style="margin-top: 1em;">
+    <label for="startLineSelect">Start line:</label>
+    <select id="startLineSelect" onchange="setStartLineName(this.value)"></select>
+</div>
 
 <!-- Start Time Row -->
 <div style="margin-top: 1em; display: flex; justify-content: center; align-items: center; gap: 0.5em;">

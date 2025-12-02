@@ -152,7 +152,7 @@ KIP components for `racer-timer` and `racer-line` have been developed and are av
 ## 🧪 Future Plans
 
 - Add calculations for:
-- **Time to line** (using STW and heading or polar speeds)
+- **Time to burn**
 - **Laylines** and distance/time to them
 
 --- 
@@ -160,3 +160,13 @@ KIP components for `racer-timer` and `racer-line` have been developed and are av
 
 Bug reports and suggestions are welcome at  
 [https://github.com/gregw/signalk-racer](https://github.com/gregw/signalk-racer)
+
+
+---
+## Development
+```text
+npm install
+npm link
+cd ~/.signalk
+npm link signalk-racer
+```

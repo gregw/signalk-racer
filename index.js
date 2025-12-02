@@ -1,5 +1,8 @@
 module.exports = (app) => {
-    const state = {};
+    const state = {
+        startLineName: null,
+        startLine: null,
+    };
     const geolib = require('geolib')
     const racerSchema = {
         title: 'Signalk Racer Configuration',
@@ -7,12 +10,12 @@ module.exports = (app) => {
         properties: {
             startLineStb: {
                 type: 'string',
-                title: 'The start line starboard end (boat) waypoint name',
+                title: 'Start line starboard-end (boat) waypoint name',
                 default: 'startBoat'
             },
             startLinePort: {
                 type: 'string',
-                title: 'The start line port end (pin) waypoint name',
+                title: 'Start line port-end (pin) waypoint name',
                 default: 'startPin'
             },
             updateStartLineWaypoint: {
@@ -35,6 +38,45 @@ module.exports = (app) => {
                 title: 'Start Timer default initial period in seconds',
                 default: 300
             },
+
+            lines: {
+                type: 'array',
+                title: 'Named lines',
+                description: 'Add zero or more named start lines',
+                items: {
+                    type: 'object',
+                    title: 'Named line',
+                    properties: {
+                        startLineName: {
+                            type: 'string',
+                            title: 'Line name',
+                        },
+                        startLineStb: {
+                            type: 'string',
+                            title: 'Start line starboard-end (boat) waypoint name'
+                        },
+                        startLinePort: {
+                            type: 'string',
+                            title: 'Start line port-end (pin) waypoint name'
+                        },
+                        updateStartLineWaypoint: {
+                            type: 'boolean',
+                            title: 'Update the start line waypoints if the startLine is updated',
+                            default: true
+                        },
+                        createStartLineWaypoint: {
+                            type: 'boolean',
+                            title: 'Create the start line waypoints if the startLine is updated and the waypoint does not exist',
+                            default: true
+                        },
+                        startLineDescription: {
+                            type: 'string',
+                            title: 'Optional description'
+                        }
+                    },
+                    required: ['startLineName', 'startLineStb', 'startLinePort']
+                }
+            }
         }
     }
     const { v4: uuidv4 } = require('uuid')
@@ -194,6 +236,32 @@ module.exports = (app) => {
         return result;
     }
 
+    function publishLineList() {
+        const lines = Array.isArray(state.options.lines) ? state.options.lines : [];
+
+        const payload = {
+            startLineName: state.startLineName || 'default',
+            lines: lines.map(l => ({
+                startLineName: l.startLineName,
+                startLineDescription: l.startLineDescription || null
+            }))
+        };
+
+        app.handleMessage('vessels.self', {
+            context: "vessels.self",
+            updates: [
+                {
+                    values: [
+                        {
+                            path: 'navigation.racing.lines',
+                            value: payload
+                        }
+                    ]
+                }
+            ]
+        });
+    }
+    
     // Put an absolute position
     async function putStartLineEnd(end, position, callback, updateWaypoint) {
         app.debug(`putStartLineEnd: ${end} ${JSON.stringify(position)}`);
@@ -257,11 +325,11 @@ module.exports = (app) => {
             }
 
             // Set/create the waypoint if we are configured to do so
-            if (state.options.updateStartLineWaypoint || updateWaypoint) {
+            if (getStartLineOptions().updateStartLineWaypoint || updateWaypoint) {
                 try {
                     const waypointConfig = `startLine${camelCase(end)}`;
                     app.debug(`waypointConfig: ${waypointConfig}`);
-                    const waypointName = state.options[waypointConfig];
+                    const waypointName = getStartLineOptions()[waypointConfig];
                     app.debug(`waypointName: ${waypointName}`);
                     let waypointId = startLine ? startLine[end + 'Id'] : null;
                     app.debug(`waypointId: ${waypointId}`);
@@ -300,7 +368,7 @@ module.exports = (app) => {
 
                     app.debug(`waypoint: ${waypointId} -> ${end}/${waypointName} : ${JSON.stringify(waypoint)}`);
 
-                    if (!waypointId && state.options.createStartLineWaypoint)
+                    if (!waypointId && getStartLineOptions().createStartLineWaypoint)
                         waypointId = uuidv4();
                     if (waypointId)
                         await app.resourcesApi.setResource('waypoints', waypointId, waypoint);
@@ -321,6 +389,24 @@ module.exports = (app) => {
             return complete(callback, 200, 'Put start line end: OK');
         } catch (err) {
             return complete(callback, 500, 'Put start line end: Failed ' + err);
+        }
+    }
+
+    async function setStartLineName(context, path, args, callback) {
+        try {
+            app.debug('setStartLineName:', JSON.stringify(args));
+            if (!args || args.startLineName != null && typeof args.startLineName !== 'string') {
+                return complete(callback, 400, 'Failed to set the startLine name!');
+            }
+            if (state.startLineName !== args.startLineName) {
+                state.startLineName = args.startLineName;
+                state.startLine = null;
+                findLineAndThenProcess(null, true);
+            }
+            publishLineList();
+            return complete(callback, 200, 'Put start line name: OK');
+        } catch (err) {
+            return complete(callback, 500, 'Put start line name: Failed ' + err);
         }
     }
 
@@ -535,16 +621,18 @@ module.exports = (app) => {
                     length: null,
                     bearing: null,
                 }
+                const startLineOptions = getStartLineOptions();
+                app.debug(`Start Line Options [${state.startLineName}]:`, JSON.stringify(startLineOptions));
                 for (const [key, value] of Object.entries(data)) {
                     app.debug(`WAYPOINT: ${key}, Value:`, JSON.stringify(value));
-                    if (value.name === state.options.startLinePort) {
+                    if (value.name === startLineOptions.startLinePort) {
                         let pos = waypointToPosition(value);
                         if (pos) {
                             startLine.portId = key;
                             startLine.port = pos;
                         }
                     }
-                    if (value.name === state.options.startLineStb) {
+                    if (value.name === startLineOptions.startLineStb) {
                         let pos = waypointToPosition(value);
                         if (pos) {
                             startLine.stbId = key;
@@ -553,21 +641,27 @@ module.exports = (app) => {
                     }
                 }
 
+                let deltas;
                 if (startLine.port && startLine.stb) {
                     startLine.length = geolib.getPreciseDistance(startLine.port, startLine.stb, 0.1);
                     startLine.bearing = geolib.getRhumbLineBearing(startLine.stb, startLine.port);
 
                     app.debug(`STARTLINE: startLinePort: ${JSON.stringify(startLine)}`);
                     state.startLine = startLine;
+                    deltas = [
+                        {path: 'navigation.racing.startLinePort', value: startLine.port},
+                        {path: 'navigation.racing.startLineStb', value: startLine.stb},
+                        {path: 'navigation.racing.startLineLength', value: startLine.length},
+                    ].filter(entry => entry.value !== null && entry.value !== undefined);
                 } else {
                     app.debug(`STARTLINE: undefined`);
                     state.startLine = null;
+                    deltas = [
+                        {path: 'navigation.racing.startLinePort', value: null},
+                        {path: 'navigation.racing.startLineStb', value: null},
+                        {path: 'navigation.racing.startLineLength', value: null},
+                    ];
                 }
-                const deltas = [
-                    {path: 'navigation.racing.startLinePort', value: startLine.port},
-                    {path: 'navigation.racing.startLineStb', value: startLine.stb},
-                    {path: 'navigation.racing.startLineLength', value: startLine.length},
-                ].filter(entry => entry.value !== null && entry.value !== undefined);
                 if (deltas.length > 0) {
                     sendDeltas(deltas);
                     processPosition(position);
@@ -762,12 +856,24 @@ module.exports = (app) => {
             processPosition(null);
         }
     }
+    
+    function getStartLineOptions() {
+        app.debug("getStartLineOptions for ", state.startLineName);
+        for (const lineOption of state.options.lines) {
+            if (lineOption.startLineName === state.startLineName) {
+                app.debug("lineOption: ", JSON.stringify(lineOption));
+                return lineOption;
+            }
+        }
+        app.debug("lineOption: ", JSON.stringify(state.options));
+        return state.options;
+    }
 
     function getStartLine() {
         const stbEnd = app.getSelfPath(`navigation.racing.startLineStb`);
         const portEnd = app.getSelfPath(`navigation.racing.startLinePort`);
         if (stbEnd && stbEnd.value && portEnd && portEnd.value) {
-            startLine = { stb: stbEnd.value, port: portEnd.value};
+            let startLine = { stb: stbEnd.value, port: portEnd.value};
             startLine.length = geolib.getPreciseDistance(startLine.port, startLine.stb, 0.1);
             startLine.bearing = geolib.getRhumbLineBearing(startLine.stb, startLine.port);
             state.startLine = startLine;
@@ -780,7 +886,7 @@ module.exports = (app) => {
     // Return the plugin
     return {
         id: 'signalk-racer',
-        name: 'SignalK Racing Plugin',
+        name: 'SignalK Racer',
         start: (options) => {
             if (!options.startLinePort || !options.startLineStb) {
                 app.error('Missing waypoint names: startLinePort and/or startLineStb not configured.');
@@ -798,6 +904,7 @@ module.exports = (app) => {
             state.gpsFromCenter = fromCenter ? fromCenter.value : null;
             state.timeToStart = options.timer;
             state.startLine = getStartLine();
+            publishLineList();
 
             // Is the timer already started
             {
@@ -985,6 +1092,7 @@ module.exports = (app) => {
             app.registerPutHandler('vessels.self', 'navigation.racing.startLineStb', (ctx, path, value, callback) => putStartLineEnd('stb', value, callback));
 
             // register to API paths for this plugin
+            app.registerPutHandler('vessels.self', 'navigation.racing.setStartLineName', setStartLineName);
             app.registerPutHandler('vessels.self', 'navigation.racing.setStartLine', setStartLine);
             app.registerPutHandler('vessels.self', 'navigation.racing.setStartTime', startTimeCommand);
         },
