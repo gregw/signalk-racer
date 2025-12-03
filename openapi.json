@@ -103,7 +103,7 @@
                       }
                     }
                   },
-                  "required": ["activeStartLineName", "lines"]
+                  "required": ["startLineName", "lines"]
                 }
               }
             }

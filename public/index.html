@@ -202,8 +202,9 @@
                 defaultOpt.textContent = 'Default line';
                 select.appendChild(defaultOpt);
 
-                if (Array.isArray(data.value.lines)) {
-                    data.value.lines.forEach(line => {
+                const payload = data && data.value ? data.value : { lines: [], startLineName: null };
+                if (Array.isArray(payload.lines)) {
+                    payload.lines.forEach(line => {
                         const opt = document.createElement('option');
                         opt.value = line.startLineName;
                         opt.textContent = line.startLineDescription
@@ -214,17 +215,17 @@
                 }
 
                 // Preselect active
-                if (!data.value.startLineName) {
+                if (!payload.startLineName) {
                     select.value = '';
                 } else {
-                    select.value = data.value.startLineName;
-                    if (select.value !== data.value.startLineName) {
+                    select.value = payload.startLineName;
+                    if (select.value !== payload.startLineName) {
                         // In case active name not in the list
                         select.value = '';
                     }
                 }
 
-                updateStatus('Loaded start lines: ' + data.value.lines.length + ' lines');
+                updateStatus('Loaded start lines: ' + payload.lines.length + ' lines');
             })
             .catch(err => {
                 console.error('Failed to load start lines:', err);
@@ -321,7 +322,7 @@
                     }
                 }
             }));
-            updateStatus(`Sent start time: ${startTime}`);
+            updateStatus(`Sent start time: ${date.toLocaleTimeString()}`);
         } catch (err) {
             console.log('Could not set start at ', err);
         }

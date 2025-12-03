@@ -233,6 +233,9 @@ module.exports = (app) => {
     function complete(callback, statusCode, message, details) {
         const result = {state: statusCode === 200 ? 'SUCCESS' : 'FAILURE', statusCode, message, details};
         app.debug(JSON.stringify(result));
+        if (typeof callback === 'function') {
+            callback(result);
+        }
         return result;
     }
 
@@ -325,7 +328,8 @@ module.exports = (app) => {
             }
 
             // Set/create the waypoint if we are configured to do so
-            if (getStartLineOptions().updateStartLineWaypoint || updateWaypoint) {
+            const startLineOptions = getStartLineOptions();
+            if (startLineOptions.updateStartLineWaypoint || updateWaypoint) {
                 try {
                     const waypointConfig = `startLine${camelCase(end)}`;
                     app.debug(`waypointConfig: ${waypointConfig}`);
@@ -368,7 +372,7 @@ module.exports = (app) => {
 
                     app.debug(`waypoint: ${waypointId} -> ${end}/${waypointName} : ${JSON.stringify(waypoint)}`);
 
-                    if (!waypointId && getStartLineOptions().createStartLineWaypoint)
+                    if (!waypointId && startLineOptions.createStartLineWaypoint)
                         waypointId = uuidv4();
                     if (waypointId)
                         await app.resourcesApi.setResource('waypoints', waypointId, waypoint);
@@ -1075,7 +1079,7 @@ module.exports = (app) => {
                                             });
                                             break;
                                         case 'navigation.racing.startLineStb' :
-                                            putStartLineEnd('port', v.value, ignored => {
+                                            putStartLineEnd('stb', v.value, ignored => {
                                             }, false).then(ignored => {
                                             });
                                             break;

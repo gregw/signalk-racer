@@ -1,5 +1,6 @@
 ## 1.1.0 Named lines
 + Added Named lines support
++ Minor bug fixes
 
 ## 1.0.1 Fix initial configuration
  + Fixed default values of initial configuration
