@@ -243,7 +243,7 @@ module.exports = (app) => {
         const lines = Array.isArray(state.options.lines) ? state.options.lines : [];
 
         const payload = {
-            startLineName: state.startLineName || 'default',
+            startLineName: state.startLineName ?? null,
             lines: lines.map(l => ({
                 startLineName: l.startLineName,
                 startLineDescription: l.startLineDescription || null
@@ -787,7 +787,7 @@ module.exports = (app) => {
         sendDeltas([
             {path: 'navigation.racing.stbLineBias', value: bias},
             {path: 'navigation.racing.nextLegTrueWindAngle', value: toRadians(nextTwa)},
-        ]);
+        ].filter(entry => entry.value !== null && entry.value !== undefined));
     }
 
     function processRoute(activeRoute) {
