@@ -731,7 +731,11 @@ module.exports = (app) => {
             angle = ((angle + 180) % 360 + 360) % 360 - 180;
             const ocs = angle < 0;
 
-            // Closest to stb
+            // We define a start zone which includes a 45° wedge off each end of the line.
+            // - If the boat is inside the start zone, distanceToLine = perpendicular to line (or extension).
+            // - If the boat is outside the start zone, distanceToLine = distance parallel to the line to enter the zone +
+            //   perpendicular distance to the line (or extension).
+            // This is illustrated for the starboard closest end of the line below:
             //     \                                     /
             //      \                                   /
             //       P---------------------------------B - - - - - -x-
