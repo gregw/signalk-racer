@@ -233,9 +233,6 @@ module.exports = (app) => {
     function complete(callback, statusCode, message, details) {
         const result = {state: statusCode === 200 ? 'SUCCESS' : 'FAILURE', statusCode, message, details};
         app.debug(JSON.stringify(result));
-        if (typeof callback === 'function') {
-            callback(result);
-        }
         return result;
     }
 
@@ -446,7 +443,8 @@ module.exports = (app) => {
                 const initialBearing = geolib.getRhumbLineBearing(otherEnd, thisEnd);
                 const currentDistance = geolib.getDistance(otherEnd, thisEnd);
 
-                const newDistance = args.delta && typeof args.delta === 'number' ? (currentDistance + args.delta) : currentDistance;
+                const delta = (args.delta && typeof args.delta === 'number' && end === 'stb') ? -args.delta : args.delta;
+                const newDistance = delta && typeof delta === 'number' ? (currentDistance + args.delta) : currentDistance;
                 const newBearing = args.rotate && typeof args.rotate === 'number' ? (initialBearing + toDegrees(args.rotate)) : initialBearing;
 
                 const newPosition = geolib.computeDestinationPoint(otherEnd, newDistance, newBearing);
@@ -455,7 +453,7 @@ module.exports = (app) => {
             }
 
             if (position)
-                return putStartLineEnd(end, position, callback, args.updateWaypoint === true);
+                return putStartLineEnd(end, position, callback, getStartLineOptions().updateStartLineWaypoint);
             return complete(callback, 500, 'Failed to set the startLine: No position');
         } catch (err) {
             return complete(callback, 500, 'Failed to set the startLine: ' + err);
@@ -714,37 +712,53 @@ module.exports = (app) => {
             const toPort = geolib.getPreciseDistance(bow, startLine.port, 0.1);
             const toStb = geolib.getPreciseDistance(bow, startLine.stb, 0.1);
 
+            // which is the closest end
             const closest = toPort < toStb ? startLine.port : startLine.stb;
             let toEnd;
-            let ocs;
+            let bearingToEnd;
             let angle;
             if (closest === state.startLine.port) {
                 toEnd = toPort;
                 app.debug('closest to Port(pin):' + toPort);
-                const toBowBearing = geolib.getRhumbLineBearing(startLine.port, bow);
-                app.debug('toBowBearing:' + toBowBearing);
-                angle = toBowBearing - (startLine.bearing + 180) % 360;
+                bearingToEnd = geolib.getRhumbLineBearing(bow, startLine.port);
+                angle = bearingToEnd - startLine.bearing;
             } else {
                 toEnd = toStb;
                 app.debug('closest to Stb(boat):' + toStb);
-                const toBowBearing = geolib.getRhumbLineBearing(startLine.stb, bow);
-                app.debug('toBowBearing:' + toBowBearing);
-                angle = startLine.bearing - toBowBearing;
+                bearingToEnd = geolib.getRhumbLineBearing(bow, startLine.stb);
+                angle = 180 - (bearingToEnd - startLine.bearing);
             }
             angle = ((angle + 180) % 360 + 360) % 360 - 180;
-            app.debug('angle:' + angle);
-            app.debug('toEnd:' + toEnd);
-            ocs = angle < 0;
-            app.debug('ocs:' + ocs);
+            const ocs = angle < 0;
 
-            let absAngle = Math.abs(angle);
-            const farFromLine = absAngle > 135;
-            app.debug('farFromLine:' + farFromLine);
-            const perpendicularToLine = toEnd * Math.sin(toRadians(absAngle));
-            app.debug('perpendicularToLine:' + perpendicularToLine);
-            let toLine = farFromLine ? Math.sqrt(toEnd * toEnd - perpendicularToLine * perpendicularToLine) : perpendicularToLine;
-            toLine = Math.round(10 * toLine) / 10;
-            app.debug('toLine:' + toLine);
+            // Closest to stb
+            //     \                                     /
+            //      \                                   /
+            //       P---------------------------------B - - - - - -x-
+            //      /135                         PBz=135\' , VBx    .
+            //     /                                     \   ' ,    .
+            //    /                                       \      ' ,.
+            //   /                                     b   z - - - -V
+            //  /                                           \
+            //
+            // P=pin; B=boat; x=extension; b=perpToBoat; z=zoneEntry; V=vessel; N=north
+            // bearing = NBP
+            // PBz == 135
+            // bBz == zBx == 45
+            // Bb == bz == Vx == perpendicular distance to the line or extension.
+            // PBV = abs(angle)
+            // VBx = 180 - PBV
+            // Vx = toEnd * sin (VBx)
+            // bBV = 90 - VBx
+            // Vb = toEnd * sin (bBV)
+            // zb = sqrt((Vx * Vx) / 2)
+            // Vz = Vb - zb
+            const anglePBV = Math.abs(angle);
+            const inStartZone = anglePBV <= 135;
+            const angleVBx = 180 - anglePBV;
+            const perpToLineVx = toEnd * Math.sin(toRadians(angleVBx));
+            let toZoneVz = inStartZone ? 0 : ( toEnd * Math.sin(toRadians(90 - angleVBx)) - Math.sqrt(perpToLineVx * perpToLineVx / 2.0));
+            const toLine = Math.round( 10 * (toZoneVz + perpToLineVx)) / 10;
             const distanceToLine = ocs ? -toLine : toLine;
             app.debug('distanceToLine:' + distanceToLine);
             state.distanceToLine = distanceToLine;
