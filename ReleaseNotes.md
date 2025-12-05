@@ -1,5 +1,7 @@
 ## 1.1.0 Named lines
 + Added Named lines support
++ Refactored distance to line calculations
++ Added timeToStart and timeToBurn
 + Minor bug fixes
 
 ## 1.0.1 Fix initial configuration
