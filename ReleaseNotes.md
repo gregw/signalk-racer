@@ -2,6 +2,7 @@
 + split into index.js and racing.js for unit testing
 + unit tested TTL 
 + allows negative TTB
++ added configurations for VMG calculations
 
 ## 1.1.0 Named lines
 + Added Named lines support

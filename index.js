@@ -38,7 +38,26 @@ module.exports = (app) => {
                 title: 'Start Timer default initial period in seconds',
                 default: 300
             },
-
+            maxSamples : {
+                type: 'number',
+                title: 'Number of samples to collect for VMG calculations',
+                default: 600
+            },
+            percentile: {
+                type: 'number',
+                title: 'Percentile used to select sample for VMG calculations (0-1)',
+                default: 0.9
+            },
+            minSog: {
+                type: 'number',
+                title: 'Minimum speed over ground (SOG) in knots to consider for VMG calculations',
+                default: 1.0
+            },
+            maxDistance: {
+                type: 'number',
+                title: 'Maximum distance to line and/or line zone in meters to consider for VMG calculations',
+                default: 2000
+            },
             lines: {
                 type: 'array',
                 title: 'Named lines',
@@ -81,6 +100,7 @@ module.exports = (app) => {
     }
     const { v4: uuidv4 } = require('uuid');
     const {
+        initRacer,
         toDegrees,
         toRadians,
         collectVmgSamples,
@@ -948,6 +968,14 @@ module.exports = (app) => {
                 app.error('Missing waypoint names: startLinePort and/or startLineStb not configured.');
                 return;
             }
+
+            initRacer({
+                minSog: options.minSog ?? 1.0,
+                maxDistance: options.maxDistance ?? 2000,
+                maxSamples: options.maxSamples ?? 600,
+                percentile: options.percentile ?? 0.9
+            }, app);
+
             app.debug('startLinePort:' + options.startLinePort);
             app.debug('startLineStb:' + options.startLineStb);
             app.debug('app.selfId:' + app.selfId);

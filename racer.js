@@ -1,6 +1,20 @@
 // lib/racerMath.js
 'use strict';
 
+let cfg = {
+    minSog: 1.0,
+    maxDistance: 2000,
+    maxSamples: 600,
+    percentile: 0.9
+};
+
+let log = { debug: () => {} };
+
+function initRacer(config = {}, logger = null) {
+    cfg = { ...cfg, ...config };
+    if (logger?.debug) log = logger;
+}
+
 // VMG sample state is kept private to this module.
 // These arrays are kept sorted ascending.
 const vmgState = {
@@ -34,9 +48,8 @@ function percentile(sortedArray, p) {
 }
 
 function collectVmgSamples(cog, sog, lineBearing, toZoneVz, perpToLineVx) {
-    // TODO configure these rejection values
-    if (sog < 1.0) return;   // ignore drifting / tacking stalls
-    if (toZoneVz > 2000 || perpToLineVx > 2000) return; // to far away from the line
+    if (sog < cfg.minSog) return;   // ignore drifting / tacking stalls
+    if (toZoneVz > cfg.maxDistance || perpToLineVx > cfg.maxDistance) return; // to far away from the line
 
     // Compute angle boatDir-relative to line bearing
     let angleRad = cog - toRadians(lineBearing);
@@ -54,7 +67,7 @@ function collectVmgSamples(cog, sog, lineBearing, toZoneVz, perpToLineVx) {
 
 function insertSample(arr, value) {
     if (value <= 1.0) return; // reject low VMGs
-    if (arr.length >= 600) arr.shift(); // Keep up to 10 minutes at 1Hz
+    if (arr.length >= cfg.maxSamples) arr.shift(); // Keep up to 10 minutes at 1Hz
 
     let lo = 0, hi = arr.length;
     while (lo < hi) {
@@ -88,7 +101,7 @@ function computeTimeToLine(cog, sog, lineBearing, toZoneVz, perpToLineVx, ocs, c
     // History:
     //  - if OCS, use vmgToLineNeg (away from line => back towards line in this case)
     //  - otherwise, use vmgToLinePos
-    const histNormal = percentile(ocs ? vmgState.vmgToLineNeg : vmgState.vmgToLinePos, 0.9);
+    const histNormal = percentile(ocs ? vmgState.vmgToLineNeg : vmgState.vmgToLinePos, cfg.percentile);
 
     // Instantaneous VMG in the *required* direction
     // if we are OCS, then the required direction is the opposite of the effective direction
@@ -103,14 +116,14 @@ function computeTimeToLine(cog, sog, lineBearing, toZoneVz, perpToLineVx, ocs, c
         if (closestEnd === 'port') {
             // Coming from the pin end, we will sail from PORT towards STB
             // => use STB-direction samples.
-            vmgHistParallel = percentile(vmgState.vmgToZoneStb, 0.9);
+            vmgHistParallel = percentile(vmgState.vmgToZoneStb, cfg.percentile);
             if (vmgTangentSigned < 0) {
                 vmgInstParallel = -vmgTangentSigned; // towards stb
             }
         } else {
             // Coming from the boat end, we will sail from STB towards PORT
             // => use PORT-direction samples.
-            vmgHistParallel = percentile(vmgState.vmgToZonePort, 0.9);
+            vmgHistParallel = percentile(vmgState.vmgToZonePort, cfg.percentile);
             if (vmgTangentSigned > 0) {
                 vmgInstParallel = vmgTangentSigned; // towards port
             }
@@ -137,6 +150,7 @@ function computeTimeToLine(cog, sog, lineBearing, toZoneVz, perpToLineVx, ocs, c
 }
 
 module.exports = {
+    initRacer,
     toDegrees,
     toRadians,
     resetVmgSamples,
