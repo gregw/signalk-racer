@@ -1,5 +1,7 @@
-## 1.1.1 Unit testings
+## 1.1.1 Unit tests
 + split into index.js and racing.js for unit testing
++ unit tested TTL 
++ allows negative TTB
 
 ## 1.1.0 Named lines
 + Added Named lines support

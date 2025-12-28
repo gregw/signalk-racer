@@ -1,4 +1,3 @@
-const {resetVmgSamples} = require("./racer");
 module.exports = (app) => {
     const state = {
         startLineName: null,
@@ -794,7 +793,7 @@ module.exports = (app) => {
                 collectVmgSamples(cog, sog, startLine.bearing, toZoneVz, perpToLineVx);
             }
             const ttl = computeTimeToLine(cog, sog, startLine.bearing, toZoneVz, perpToLineVx, ocs, closestEnd);
-            const ttb = !ocs && state.timerRunning && state.timeToStart > 0 ? Math.max(0, state.timeToStart - ttl) : null;
+            const ttb = !ocs && state.timerRunning && state.timeToStart > 0 ? (state.timeToStart - ttl) : null;
 
             sendDeltas([
                 {path: 'navigation.racing.distanceStartline', value: distanceToLine},
