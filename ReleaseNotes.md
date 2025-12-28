@@ -1,3 +1,6 @@
+## 1.1.1 Unit testings
++ split into index.js and racing.js for unit testing
+
 ## 1.1.0 Named lines
 + Added Named lines support
 + Refactored distance to line calculations

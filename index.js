@@ -84,7 +84,13 @@ module.exports = (app) => {
             }
         }
     }
-    const { v4: uuidv4 } = require('uuid')
+    const { v4: uuidv4 } = require('uuid');
+    const {
+        toDegrees,
+        toRadians,
+        percentileFromSorted
+    } = require('./racer');
+
     const unsubscribes = [];
 
     // Update meta data for non standard paths
@@ -208,16 +214,6 @@ module.exports = (app) => {
         } else {
             return null;
         }
-    }
-
-    function toDegrees(rad) {
-        if (rad === null || rad === undefined) return null;
-        return rad * (180 / Math.PI);
-    }
-
-    function toRadians(degrees) {
-        if (degrees === null || degrees === undefined) return null;
-        return degrees * (Math.PI / 180);
     }
 
     function toOtherEnd(end) {
@@ -929,12 +925,6 @@ module.exports = (app) => {
         app.debug(`computeTimeToLine: ${closestEnd} ${toZoneVz} ${perpToLineVx} ${vmgEffectParallel} ${vmgEffNormal} = ${ttl}`);
         // If we still somehow have zero (no speed or distances), just return time to start so TTB logic doesn't explode.
         return ttl <= 0 ? state.timeToStart : ttl;
-    }
-
-    function percentileFromSorted(arr, p) {
-        if (!arr || !arr.length) return 0;
-        const idx = Math.floor(p * (arr.length - 1));
-        return arr[idx];
     }
 
     function processWind(twd) {
