@@ -10,6 +10,9 @@ const {
 } = require('../racer');
 
 describe('racer vmg', () => {
+    // Helper: sorted view of an array (ascending), does not mutate original
+    const s = (arr) => [...arr].sort((a, b) => a - b);
+
     test('resetVmgSamples: test arrays are cleared', () => {
         _vmgState.vmgToLinePos.push(1, 2, 3);
         _vmgState.vmgToLineNeg.push(4, 5, 6);
@@ -31,19 +34,19 @@ describe('racer vmg', () => {
         resetVmgSamples();
         collectVmgSamples(toRadians(0), 19.7, 270, 0, 0);
         expect(_vmgState.vmgToLinePos.length).toBe(1);
-        expect(_vmgState.vmgToLinePos[0]).toBeCloseTo(19.7);
+        expect(s(_vmgState.vmgToLinePos)[0]).toBeCloseTo(19.7);
         expect(_vmgState.vmgToLineNeg.length).toBe(0);
         expect(_vmgState.vmgToZonePort.length).toBe(0);
         expect(_vmgState.vmgToZoneStb.length).toBe(0);
 
         collectVmgSamples(toRadians(8.21), 19.7, 270, 0, 0);
         expect(_vmgState.vmgToLinePos.length).toBe(2);
-        expect(_vmgState.vmgToLinePos[0]).toBeCloseTo(19.5);
-        expect(_vmgState.vmgToLinePos[1]).toBeCloseTo(19.7);
+        expect(s(_vmgState.vmgToLinePos)[0]).toBeCloseTo(19.5);
+        expect(s(_vmgState.vmgToLinePos)[1]).toBeCloseTo(19.7);
         expect(_vmgState.vmgToLineNeg.length).toBe(0);
         expect(_vmgState.vmgToZonePort.length).toBe(0);
         expect(_vmgState.vmgToZoneStb.length).toBe(1);
-        expect(_vmgState.vmgToZoneStb[0]).toBeCloseTo(2.81);
+        expect(s(_vmgState.vmgToZoneStb)[0]).toBeCloseTo(2.81);
     });
 
 
@@ -51,103 +54,103 @@ describe('racer vmg', () => {
         resetVmgSamples();
         collectVmgSamples(toRadians(0), 5, 270, 0, 0);
         expect(_vmgState.vmgToLinePos.length).toBe(1);
-        expect(_vmgState.vmgToLinePos[0]).toBe(5);
+        expect(s(_vmgState.vmgToLinePos)[0]).toBe(5);
         expect(_vmgState.vmgToLineNeg.length).toBe(0);
         expect(_vmgState.vmgToZonePort.length).toBe(0);
         expect(_vmgState.vmgToZoneStb.length).toBe(0);
 
         collectVmgSamples(toRadians(36.87), 5, 270, 0, 0);
         expect(_vmgState.vmgToLinePos.length).toBe(2);
-        expect(_vmgState.vmgToLinePos[0]).toBeCloseTo(4);
-        expect(_vmgState.vmgToLinePos[1]).toBe(5);
+        expect(s(_vmgState.vmgToLinePos)[0]).toBeCloseTo(4);
+        expect(s(_vmgState.vmgToLinePos)[1]).toBe(5);
         expect(_vmgState.vmgToLineNeg.length).toBe(0);
         expect(_vmgState.vmgToZonePort.length).toBe(0);
         expect(_vmgState.vmgToZoneStb.length).toBe(1);
-        expect(_vmgState.vmgToZoneStb[0]).toBeCloseTo(3);
+        expect(s(_vmgState.vmgToZoneStb)[0]).toBeCloseTo(3);
 
         collectVmgSamples(toRadians(90), 5, 270, 0, 0);
         expect(_vmgState.vmgToLinePos.length).toBe(2);
-        expect(_vmgState.vmgToLinePos[0]).toBeCloseTo(4);
-        expect(_vmgState.vmgToLinePos[1]).toBeCloseTo(5);
+        expect(s(_vmgState.vmgToLinePos)[0]).toBeCloseTo(4);
+        expect(s(_vmgState.vmgToLinePos)[1]).toBeCloseTo(5);
         expect(_vmgState.vmgToLineNeg.length).toBe(0);
         expect(_vmgState.vmgToZonePort.length).toBe(0);
         expect(_vmgState.vmgToZoneStb.length).toBe(2);
-        expect(_vmgState.vmgToZoneStb[0]).toBeCloseTo(3);
-        expect(_vmgState.vmgToZoneStb[1]).toBeCloseTo(5);
+        expect(s(_vmgState.vmgToZoneStb)[0]).toBeCloseTo(3);
+        expect(s(_vmgState.vmgToZoneStb)[1]).toBeCloseTo(5);
 
         collectVmgSamples(toRadians(90 + 36.87), 5, 270, 0, 0);
         expect(_vmgState.vmgToLinePos.length).toBe(2);
-        expect(_vmgState.vmgToLinePos[0]).toBeCloseTo(4);
-        expect(_vmgState.vmgToLinePos[1]).toBeCloseTo(5);
+        expect(s(_vmgState.vmgToLinePos)[0]).toBeCloseTo(4);
+        expect(s(_vmgState.vmgToLinePos)[1]).toBeCloseTo(5);
         expect(_vmgState.vmgToLineNeg.length).toBe(1);
-        expect(_vmgState.vmgToLineNeg[0]).toBeCloseTo(3);
+        expect(s(_vmgState.vmgToLineNeg)[0]).toBeCloseTo(3);
         expect(_vmgState.vmgToZonePort.length).toBe(0);
         expect(_vmgState.vmgToZoneStb.length).toBe(3);
-        expect(_vmgState.vmgToZoneStb[0]).toBeCloseTo(3);
-        expect(_vmgState.vmgToZoneStb[1]).toBeCloseTo(4);
-        expect(_vmgState.vmgToZoneStb[2]).toBeCloseTo(5);
+        expect(s(_vmgState.vmgToZoneStb)[0]).toBeCloseTo(3);
+        expect(s(_vmgState.vmgToZoneStb)[1]).toBeCloseTo(4);
+        expect(s(_vmgState.vmgToZoneStb)[2]).toBeCloseTo(5);
 
         collectVmgSamples(toRadians(180), 5, 270, 0, 0);
         expect(_vmgState.vmgToLinePos.length).toBe(2);
-        expect(_vmgState.vmgToLinePos[0]).toBeCloseTo(4);
-        expect(_vmgState.vmgToLinePos[1]).toBeCloseTo(5);
+        expect(s(_vmgState.vmgToLinePos)[0]).toBeCloseTo(4);
+        expect(s(_vmgState.vmgToLinePos)[1]).toBeCloseTo(5);
         expect(_vmgState.vmgToLineNeg.length).toBe(2);
-        expect(_vmgState.vmgToLineNeg[0]).toBeCloseTo(3);
-        expect(_vmgState.vmgToLineNeg[1]).toBeCloseTo(5);
+        expect(s(_vmgState.vmgToLineNeg)[0]).toBeCloseTo(3);
+        expect(s(_vmgState.vmgToLineNeg)[1]).toBeCloseTo(5);
         expect(_vmgState.vmgToZonePort.length).toBe(0);
         expect(_vmgState.vmgToZoneStb.length).toBe(3);
-        expect(_vmgState.vmgToZoneStb[0]).toBeCloseTo(3);
-        expect(_vmgState.vmgToZoneStb[1]).toBeCloseTo(4);
-        expect(_vmgState.vmgToZoneStb[2]).toBeCloseTo(5);
+        expect(s(_vmgState.vmgToZoneStb)[0]).toBeCloseTo(3);
+        expect(s(_vmgState.vmgToZoneStb)[1]).toBeCloseTo(4);
+        expect(s(_vmgState.vmgToZoneStb)[2]).toBeCloseTo(5);
 
         collectVmgSamples(toRadians(180 + 53.13), 5, 270, 0, 0);
         expect(_vmgState.vmgToLinePos.length).toBe(2);
-        expect(_vmgState.vmgToLinePos[0]).toBeCloseTo(4);
-        expect(_vmgState.vmgToLinePos[1]).toBeCloseTo(5);
+        expect(s(_vmgState.vmgToLinePos)[0]).toBeCloseTo(4);
+        expect(s(_vmgState.vmgToLinePos)[1]).toBeCloseTo(5);
         expect(_vmgState.vmgToLineNeg.length).toBe(3);
-        expect(_vmgState.vmgToLineNeg[0]).toBeCloseTo(3);
-        expect(_vmgState.vmgToLineNeg[1]).toBeCloseTo(3);
-        expect(_vmgState.vmgToLineNeg[2]).toBeCloseTo(5);
+        expect(s(_vmgState.vmgToLineNeg)[0]).toBeCloseTo(3);
+        expect(s(_vmgState.vmgToLineNeg)[1]).toBeCloseTo(3);
+        expect(s(_vmgState.vmgToLineNeg)[2]).toBeCloseTo(5);
         expect(_vmgState.vmgToZonePort.length).toBe(1);
-        expect(_vmgState.vmgToZonePort[0]).toBeCloseTo(4);
+        expect(s(_vmgState.vmgToZonePort)[0]).toBeCloseTo(4);
         expect(_vmgState.vmgToZoneStb.length).toBe(3);
-        expect(_vmgState.vmgToZoneStb[0]).toBeCloseTo(3);
-        expect(_vmgState.vmgToZoneStb[1]).toBeCloseTo(4);
-        expect(_vmgState.vmgToZoneStb[2]).toBeCloseTo(5);
+        expect(s(_vmgState.vmgToZoneStb)[0]).toBeCloseTo(3);
+        expect(s(_vmgState.vmgToZoneStb)[1]).toBeCloseTo(4);
+        expect(s(_vmgState.vmgToZoneStb)[2]).toBeCloseTo(5);
 
         collectVmgSamples(toRadians(270), 5, 270, 0, 0);
         expect(_vmgState.vmgToLinePos.length).toBe(2);
-        expect(_vmgState.vmgToLinePos[0]).toBeCloseTo(4);
-        expect(_vmgState.vmgToLinePos[1]).toBeCloseTo(5);
+        expect(s(_vmgState.vmgToLinePos)[0]).toBeCloseTo(4);
+        expect(s(_vmgState.vmgToLinePos)[1]).toBeCloseTo(5);
         expect(_vmgState.vmgToLineNeg.length).toBe(3);
-        expect(_vmgState.vmgToLineNeg[0]).toBeCloseTo(3);
-        expect(_vmgState.vmgToLineNeg[1]).toBeCloseTo(3);
-        expect(_vmgState.vmgToLineNeg[2]).toBeCloseTo(5);
+        expect(s(_vmgState.vmgToLineNeg)[0]).toBeCloseTo(3);
+        expect(s(_vmgState.vmgToLineNeg)[1]).toBeCloseTo(3);
+        expect(s(_vmgState.vmgToLineNeg)[2]).toBeCloseTo(5);
         expect(_vmgState.vmgToZonePort.length).toBe(2);
-        expect(_vmgState.vmgToZonePort[0]).toBeCloseTo(4);
-        expect(_vmgState.vmgToZonePort[1]).toBeCloseTo(5);
+        expect(s(_vmgState.vmgToZonePort)[0]).toBeCloseTo(4);
+        expect(s(_vmgState.vmgToZonePort)[1]).toBeCloseTo(5);
         expect(_vmgState.vmgToZoneStb.length).toBe(3);
-        expect(_vmgState.vmgToZoneStb[0]).toBeCloseTo(3);
-        expect(_vmgState.vmgToZoneStb[1]).toBeCloseTo(4);
-        expect(_vmgState.vmgToZoneStb[2]).toBeCloseTo(5);
+        expect(s(_vmgState.vmgToZoneStb)[0]).toBeCloseTo(3);
+        expect(s(_vmgState.vmgToZoneStb)[1]).toBeCloseTo(4);
+        expect(s(_vmgState.vmgToZoneStb)[2]).toBeCloseTo(5);
 
         collectVmgSamples(-toRadians(53.13), 5, 270, 0, 0);
         expect(_vmgState.vmgToLinePos.length).toBe(3);
-        expect(_vmgState.vmgToLinePos[0]).toBeCloseTo(3);
-        expect(_vmgState.vmgToLinePos[1]).toBeCloseTo(4);
-        expect(_vmgState.vmgToLinePos[2]).toBeCloseTo(5);
+        expect(s(_vmgState.vmgToLinePos)[0]).toBeCloseTo(3);
+        expect(s(_vmgState.vmgToLinePos)[1]).toBeCloseTo(4);
+        expect(s(_vmgState.vmgToLinePos)[2]).toBeCloseTo(5);
         expect(_vmgState.vmgToLineNeg.length).toBe(3);
-        expect(_vmgState.vmgToLineNeg[0]).toBeCloseTo(3);
-        expect(_vmgState.vmgToLineNeg[1]).toBeCloseTo(3);
-        expect(_vmgState.vmgToLineNeg[2]).toBeCloseTo(5);
+        expect(s(_vmgState.vmgToLineNeg)[0]).toBeCloseTo(3);
+        expect(s(_vmgState.vmgToLineNeg)[1]).toBeCloseTo(3);
+        expect(s(_vmgState.vmgToLineNeg)[2]).toBeCloseTo(5);
         expect(_vmgState.vmgToZonePort.length).toBe(3);
-        expect(_vmgState.vmgToZonePort[0]).toBeCloseTo(4);
-        expect(_vmgState.vmgToZonePort[1]).toBeCloseTo(4);
-        expect(_vmgState.vmgToZonePort[2]).toBeCloseTo(5);
+        expect(s(_vmgState.vmgToZonePort)[0]).toBeCloseTo(4);
+        expect(s(_vmgState.vmgToZonePort)[1]).toBeCloseTo(4);
+        expect(s(_vmgState.vmgToZonePort)[2]).toBeCloseTo(5);
         expect(_vmgState.vmgToZoneStb.length).toBe(3);
-        expect(_vmgState.vmgToZoneStb[0]).toBeCloseTo(3);
-        expect(_vmgState.vmgToZoneStb[1]).toBeCloseTo(4);
-        expect(_vmgState.vmgToZoneStb[2]).toBeCloseTo(5);
+        expect(s(_vmgState.vmgToZoneStb)[0]).toBeCloseTo(3);
+        expect(s(_vmgState.vmgToZoneStb)[1]).toBeCloseTo(4);
+        expect(s(_vmgState.vmgToZoneStb)[2]).toBeCloseTo(5);
 
     });
 
@@ -156,9 +159,9 @@ describe('racer vmg', () => {
         collectVmgSamples(toRadians(0), 19.7, 8.21, 0, 0);
         expect(_vmgState.vmgToLinePos.length).toBe(0);
         expect(_vmgState.vmgToLineNeg.length).toBe(1);
-        expect(_vmgState.vmgToLineNeg[0]).toBeCloseTo(2.81);
+        expect(s(_vmgState.vmgToLineNeg)[0]).toBeCloseTo(2.81);
         expect(_vmgState.vmgToZonePort.length).toBe(1);
-        expect(_vmgState.vmgToZonePort[0]).toBeCloseTo(19.5);
+        expect(s(_vmgState.vmgToZonePort)[0]).toBeCloseTo(19.5);
         expect(_vmgState.vmgToZoneStb.length).toBe(0);
     });
 });

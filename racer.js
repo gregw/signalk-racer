@@ -16,7 +16,6 @@ function initRacer(config = {}, logger = null) {
 }
 
 // VMG sample state is kept private to this module.
-// These arrays are kept sorted ascending.
 const vmgState = {
     vmgToLinePos: [],  // VMG towards the line (not OCS to line)
     vmgToLineNeg: [],  // VMG away from the line (OCS to line)
@@ -41,10 +40,11 @@ function toRadians(deg) {
     return deg * (Math.PI / 180);
 }
 
-function percentile(sortedArray, p) {
-    if (!sortedArray || !sortedArray.length) return 0;
-    const idx = Math.floor(p * (sortedArray.length - 1));
-    return sortedArray[idx];
+function percentile(arr, p) {
+    if (!arr || !arr.length) return 0;
+    const sorted = arr.slice().sort((a, b) => a - b);
+    const idx = Math.floor(p * (sorted.length - 1));
+    return sorted[idx];
 }
 
 function collectVmgSamples(cog, sog, lineBearing, toZoneVz, perpToLineVx) {
@@ -67,15 +67,8 @@ function collectVmgSamples(cog, sog, lineBearing, toZoneVz, perpToLineVx) {
 
 function insertSample(arr, value) {
     if (value <= 1.0) return; // reject low VMGs
-    if (arr.length >= cfg.maxSamples) arr.shift(); // Keep up to 10 minutes at 1Hz
-
-    let lo = 0, hi = arr.length;
-    while (lo < hi) {
-        const mid = (lo + hi) >> 1;
-        if (arr[mid] < value) lo = mid + 1;
-        else hi = mid;
-    }
-    arr.splice(lo, 0, value);
+    if (arr.length >= cfg.maxSamples) arr.shift(); // evict oldest (FIFO)
+    arr.push(value);
 }
 
 function computeTimeToLine(cog, sog, lineBearing, toZoneVz, perpToLineVx, ocs, closestEnd) {
