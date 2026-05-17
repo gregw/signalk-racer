@@ -98,7 +98,7 @@ function insertSample(vmg, value) {
     vmg.queue.push(value);
 }
 
-function computeTimeToLine(cog, sog, lineBearing, toZoneVz, perpToLineVx, ocs, closestEnd) {
+function computeTimeToLine(cog, sog, lineBearing, toZoneVz, perpToLineVx, ocs, closestEnd, timeToStart = 0) {
     let vmgNormalSigned = 0;
     let vmgTangentSigned = 0;
 
@@ -166,7 +166,7 @@ function computeTimeToLine(cog, sog, lineBearing, toZoneVz, perpToLineVx, ocs, c
     }
 
     // If we still somehow have zero (no speed or distances), just return time to start so TTB logic doesn't explode.
-    return ttl <= 0 ? vmgState.timeToStart : ttl;
+    return ttl <= 0 ? timeToStart : ttl;
 }
 
 module.exports = {

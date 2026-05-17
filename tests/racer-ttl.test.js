@@ -14,7 +14,10 @@ describe('racer ttl', () => {
     test('timeToLineNoVMG: no VMG', () => {
         resetVmgSamples();
         expect(computeTimeToLine(toRadians(0), 10, 270, 0, 100, false, 'stb')).toBeCloseTo(10);
-        expect(computeTimeToLine(toRadians(0), 10, 270, 100, 0, false, 'stb')).toBeUndefined();
+        // Fallback: ttl computed as 0, so returns the supplied timeToStart.
+        expect(computeTimeToLine(toRadians(0), 10, 270, 100, 0, false, 'stb', 300)).toBe(300);
+        // Default timeToStart parameter is 0.
+        expect(computeTimeToLine(toRadians(0), 10, 270, 100, 0, false, 'stb')).toBe(0);
     });
 
     test('timeToLineSmallVmg: small VMG', () => {

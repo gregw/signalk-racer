@@ -196,19 +196,22 @@ module.exports = (app) => {
     });
 
     // send multiple deltas, each in the form of { path, value }
+    // null values are preserved (meaningful in SignalK for clearing a value);
+    // undefined values are dropped to avoid "Delta is missing value" warnings.
     function sendDeltas(updatesArray) {
-        const timestamp = new Date().toISOString();
+        const values = updatesArray
+            .filter(({value}) => value !== undefined)
+            .map(({path, value}) => ({path, value}));
+
+        if (values.length === 0) return;
 
         const delta = {
             context: 'vessels.self',
             updates: [
                 {
                     source: {label: 'signalk-racer'},
-                    timestamp: timestamp,
-                    values: updatesArray.map(({path, value}) => ({
-                        path,
-                        value
-                    }))
+                    timestamp: new Date().toISOString(),
+                    values
                 }
             ]
         };
@@ -812,8 +815,8 @@ module.exports = (app) => {
             if (cog != null && sog != null) {
                 collectVmgSamples(cog, sog, startLine.bearing, toZoneVz, perpToLineVx);
             }
-            const ttl = computeTimeToLine(cog, sog, startLine.bearing, toZoneVz, perpToLineVx, ocs, closestEnd);
-            const ttb = !ocs && state.timerRunning && state.timeToStart > 0 ? (state.timeToStart - ttl) : null;
+            const ttl = computeTimeToLine(cog, sog, startLine.bearing, toZoneVz, perpToLineVx, ocs, closestEnd, state.timeToStart ?? 0);
+            const ttb = !ocs && state.timerRunning && state.timeToStart > 0 && ttl != null ? (state.timeToStart - ttl) : null;
 
             sendDeltas([
                 {path: 'navigation.racing.distanceStartline', value: distanceToLine},
