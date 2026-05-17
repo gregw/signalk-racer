@@ -19,10 +19,10 @@ describe('racer ttl', () => {
 
     test('timeToLineSmallVmg: small VMG', () => {
         resetVmgSamples();
-        _vmgState.vmgToLinePos.push(1, 1, 1);
-        _vmgState.vmgToLineNeg.push(2, 2, 2);
-        _vmgState.vmgToZonePort.push(1, 1, 1);
-        _vmgState.vmgToZoneStb.push(2, 2, 2);
+        _vmgState.vmgToLinePos.sorted.push(1, 1, 1);
+        _vmgState.vmgToLineNeg.sorted.push(2, 2, 2);
+        _vmgState.vmgToZonePort.sorted.push(1, 1, 1);
+        _vmgState.vmgToZoneStb.sorted.push(2, 2, 2);
 
         expect(computeTimeToLine(toRadians(-1), 10, 270, 0, 100, false, 'stb')).toBeCloseTo(10);
         expect(computeTimeToLine(toRadians(0), 10, 270, 100, 0, false, 'stb')).toBeCloseTo(100);
@@ -59,10 +59,10 @@ describe('racer ttl', () => {
 
     test('timeToLineSmallInstant: small instant', () => {
         resetVmgSamples();
-        _vmgState.vmgToLinePos.push(10, 10, 10, 10, 10, 10, 10, 10, 10, 15);
-        _vmgState.vmgToLineNeg.push(20, 20, 20, 20, 20, 20, 20, 20, 20, 25);
-        _vmgState.vmgToZonePort.push(10, 10, 10, 10, 10, 10, 10, 10, 10, 15);
-        _vmgState.vmgToZoneStb.push(20, 20, 20, 20, 20, 20, 20, 20, 20, 25);
+        _vmgState.vmgToLinePos.sorted.push(10, 10, 10, 10, 10, 10, 10, 10, 10, 15);
+        _vmgState.vmgToLineNeg.sorted.push(20, 20, 20, 20, 20, 20, 20, 20, 20, 25);
+        _vmgState.vmgToZonePort.sorted.push(10, 10, 10, 10, 10, 10, 10, 10, 10, 15);
+        _vmgState.vmgToZoneStb.sorted.push(20, 20, 20, 20, 20, 20, 20, 20, 20, 25);
 
         expect(computeTimeToLine(toRadians(-1), 1, 270, 0, 100, false, 'stb')).toBeCloseTo(10);
         expect(computeTimeToLine(toRadians(0), 1, 270, 100, 0, false, 'stb')).toBeCloseTo(10);

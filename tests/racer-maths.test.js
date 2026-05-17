@@ -24,12 +24,13 @@ describe('racer math', () => {
         expect(toRadians(undefined)).toBeNull();
     });
     test('percentile: test maths', () => {
-        expect(_percentile([], 0.5)).toBe(0);
-        expect(_percentile([10], 0.5)).toBe(10);
-        expect(_percentile([10, 20, 30], 0)).toBe(10);
-        expect(_percentile([10, 20, 30], 0.5)).toBe(20);
-        expect(_percentile([10, 20, 30], 0.9)).toBe(20);
-        expect(_percentile([10, 20, 30], 1)).toBe(30);
-        expect(_percentile([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 0.75)).toBe(7);
+        const vmg = (arr) => ({ sorted: arr, queue: [] });
+        expect(_percentile(vmg([]), 0.5)).toBe(0);
+        expect(_percentile(vmg([10]), 0.5)).toBe(10);
+        expect(_percentile(vmg([10, 20, 30]), 0)).toBe(10);
+        expect(_percentile(vmg([10, 20, 30]), 0.5)).toBe(20);
+        expect(_percentile(vmg([10, 20, 30]), 0.9)).toBe(20);
+        expect(_percentile(vmg([10, 20, 30]), 1)).toBe(30);
+        expect(_percentile(vmg([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]), 0.75)).toBe(7);
     })
 });

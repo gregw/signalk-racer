@@ -8,26 +8,31 @@ let cfg = {
     percentile: 0.9
 };
 
-let log = { debug: () => {} };
+let log = {
+    debug: () => {
+    }
+};
 
 function initRacer(config = {}, logger = null) {
-    cfg = { ...cfg, ...config };
+    cfg = {...cfg, ...config};
     if (logger?.debug) log = logger;
 }
 
 // VMG sample state is kept private to this module.
+// Each entry has a `sorted` array (ascending, for O(1) percentile) and a
+// `queue` array (insertion-order FIFO, for correct oldest-first eviction).
 const vmgState = {
-    vmgToLinePos: [],  // VMG towards the line (not OCS to line)
-    vmgToLineNeg: [],  // VMG away from the line (OCS to line)
-    vmgToZonePort: [], // Motion along the line towards the PORT end (pin)
-    vmgToZoneStb: [],  // Motion along the line towards the STARBOARD end (boat)
+    vmgToLinePos: {sorted: [], queue: []},  // VMG towards the line (not OCS to line)
+    vmgToLineNeg: {sorted: [], queue: []},  // VMG away from the line (OCS to line)
+    vmgToZonePort: {sorted: [], queue: []}, // Motion along the line towards the PORT end (pin)
+    vmgToZoneStb: {sorted: [], queue: []}, // Motion along the line towards the STARBOARD end (boat)
 };
 
 function resetVmgSamples() {
-    vmgState.vmgToLinePos.length = 0;
-    vmgState.vmgToLineNeg.length = 0;
-    vmgState.vmgToZonePort.length = 0;
-    vmgState.vmgToZoneStb.length = 0;
+    for (const vmg of Object.values(vmgState)) {
+        vmg.sorted.length = 0;
+        vmg.queue.length = 0;
+    }
 }
 
 function toDegrees(rad) {
@@ -40,11 +45,10 @@ function toRadians(deg) {
     return deg * (Math.PI / 180);
 }
 
-function percentile(arr, p) {
-    if (!arr || !arr.length) return 0;
-    const sorted = arr.slice().sort((a, b) => a - b);
-    const idx = Math.floor(p * (sorted.length - 1));
-    return sorted[idx];
+function percentile(vmg, p) {
+    if (!vmg.sorted.length) return 0;
+    const idx = Math.floor(p * (vmg.sorted.length - 1));
+    return vmg.sorted[idx];
 }
 
 function collectVmgSamples(cog, sog, lineBearing, toZoneVz, perpToLineVx) {
@@ -65,10 +69,33 @@ function collectVmgSamples(cog, sog, lineBearing, toZoneVz, perpToLineVx) {
     insertSample(vmgState.vmgToZoneStb, -vmgTangent);
 }
 
-function insertSample(arr, value) {
-    if (value <= 1.0) return; // reject low VMGs
-    if (arr.length >= cfg.maxSamples) arr.shift(); // evict oldest (FIFO)
-    arr.push(value);
+function insertSample(vmg, value) {
+    if (value <= 1.0)
+        return; // reject low VMGs
+    if (vmg.queue.length >= cfg.maxSamples) {
+        const oldest = vmg.queue.shift(); // evict oldest from FIFO
+        // remove oldest from sorted (binary search)
+        let lo = 0, hi = vmg.sorted.length;
+        while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (vmg.sorted[mid] < oldest)
+                lo = mid + 1;
+            else
+                hi = mid;
+        }
+        vmg.sorted.splice(lo, 1);
+    }
+    // insert value into sorted (binary search)
+    let lo = 0, hi = vmg.sorted.length;
+    while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (vmg.sorted[mid] < value)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    vmg.sorted.splice(lo, 0, value);
+    vmg.queue.push(value);
 }
 
 function computeTimeToLine(cog, sog, lineBearing, toZoneVz, perpToLineVx, ocs, closestEnd) {
