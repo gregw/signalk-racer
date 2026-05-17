@@ -1,3 +1,7 @@
+## 1.1.2 TTL fixes
+ + use a FIFO queue for VMGs towards the line.
+ + avoid undefined values in deltas
+
 ## 1.1.1 Unit tests
 + split into index.js and racing.js for unit testing
 + unit tested TTL 

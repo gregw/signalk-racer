@@ -190,3 +190,40 @@ npm link
 cd ~/.signalk
 npm link signalk-racer
 ```
+
+---
+## 🚀 Releasing
+
+Releases are cut manually from a clean `main` checkout and published to npm.
+
+### Pre-flight
+
+1. Confirm `main` is up to date and clean: `git checkout main && git pull && git status`.
+2. Run the test suite: `npm test`.
+3. Review commits since the last release: `git log $(git describe --tags --abbrev=0)..HEAD --oneline`.
+4. Decide the version bump (semver): `patch` for bug fixes, `minor` for features, `major` for breaking changes.
+
+### Cut the release
+
+1. Update `ReleaseNotes.md` — add a new entry at the top with the new version and a short bullet list of changes, then `git add ReleaseNotes.md`.
+2. Bump the version and create the git tag in one step (note the non-default tag prefix so it matches the existing `signalk-racer-X.Y.Z` convention):
+   ```
+   npm version <patch|minor|major> --tag-version-prefix=signalk-racer-
+   ```
+   This rewrites `package.json`, includes any staged files (e.g. `ReleaseNotes.md`) in the bump commit, and creates tag `signalk-racer-X.Y.Z`.
+3. Push the commit and the tag:
+   ```
+   git push origin main
+   git push origin signalk-racer-X.Y.Z
+   ```
+
+### Publish to npm
+
+1. Confirm npm auth: `npm whoami` (login with `npm login` if needed).
+2. Dry-run the publish to inspect the tarball contents: `npm publish --dry-run`.
+3. Publish: `npm publish` (the package is public and unscoped; no `--access` flag needed).
+
+### After release
+
+1. Verify on npm: `npm view signalk-racer version` should report the new version.
+2. (Optional) Create a GitHub release from the new tag with notes copied from `ReleaseNotes.md`.
