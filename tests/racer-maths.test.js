@@ -24,7 +24,7 @@ describe('racer math', () => {
         expect(toRadians(undefined)).toBeNull();
     });
     test('percentile: test maths', () => {
-        const vmg = (arr) => ({ sorted: arr, queue: [] });
+        const vmg = (arr) => ({sorted: arr.map(v => ({value: v, cog: 0, sog: v})), queue: []});
         expect(_percentile(vmg([]), 0.5)).toBe(0);
         expect(_percentile(vmg([10]), 0.5)).toBe(10);
         expect(_percentile(vmg([10, 20, 30]), 0)).toBe(10);

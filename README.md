@@ -14,19 +14,26 @@ GitHub repository: [https://github.com/gregw/signalk-racer](https://github.com/g
 
 This plugin calculates and publishes the following Signal K paths:
 
-| Path                                            | Description                                            | Units                  | Std |
-|-------------------------------------------------|--------------------------------------------------------|------------------------|-----|
-| `navigation.racing.`<br/>`distanceStartline`    | Signed minimum distance from the bow to the start line | `m`                    | Y   |
-| `navigation.racing.`<br/>`startLineLength`      | Total length of the start line                         | `m`                    |     |
-| `navigation.racing.`<br/>`stbLineBias`          | Bias of the start line toward the starboard end        | `m`                    |     |
-| `navigation.racing.`<br/>`startLinePort`        | Location of the port (pin) end of the start line       | `{latitude,longitude}` | Y   |
-| `navigation.racing.`<br/>`startLineStb`         | Location of the starboard (boat) end of the start line | `{latitude,longitude}` | Y   |
-| `navigation.racing.`<br/>`nextLegHeading`       | True heading for the next leg of the course            | `rad`                  |     |
-| `navigation.racing.`<br/>`nextLegTrueWindAngle` | True Wind Angle for the next leg of the course         | `rad`                  |     |
-| `navigation.racing.`<br/>`timeToStart`          | Period of time until the race start                    | `s`                    | Y   |
-| `navigation.racing.`<br/>`timeToLine`           | Period of time to sail to the line at best VMG         | `s`                    |     |
-| `navigation.racing.`<br/>`timeToBurn`           | Period of time delay before sailing to the at best VMG | `s`                    |     |
-| `navigation.racing.`<br/>`startTime`            | The start time as an ISO timestamp                     | `rfc3339`              |     |
+| Path                                       | Description                                                            | Units                                              | Std |
+|--------------------------------------------|------------------------------------------------------------------------|----------------------------------------------------|-----|
+| `navigation.racing.distanceStartline`      | Signed minimum distance from the bow to the start line                 | `m`                                                | Y   |
+| `navigation.racing.startLineLength`        | Total length of the start line                                         | `m`                                                |     |
+| `navigation.racing.startLineBearing`       | Bearing of the start line, from the stb end to the port end            | `rad`                                              |     |
+| `navigation.racing.stbLineBias`            | Bias of the start line toward the starboard end                        | `m`                                                |     |
+| `navigation.racing.bestVmg.toCourseSide`   | Best VMG across the line towards the course side                       | `m/s`                                              |     |
+| `navigation.racing.bestVmg.fromCourseSide` | Best VMG back across the line from the course side (used when OCS)     | `m/s`                                              |     |
+| `navigation.racing.bestVmg.toPortEnd`      | Best VMG along the line towards the port end (pin)                     | `m/s`                                              |     |
+| `navigation.racing.bestVmg.toStbEnd`       | Best VMG along the line towards the stb end (boat)                     | `m/s`                                              |     |
+| `navigation.racing.bestVmg.*.override`     | The manual adjustment behind each best VMG, `null` when not adjusted   | `m/s`                                              |     |
+| `navigation.racing.bestApproach`           | The course actually sailed that achieved the best VMG towards the line | `{rad,m/s}`                                        |     |
+| `navigation.racing.startLinePort`          | Location of the port (pin) end of the start line                       | `{latitude,longitude}`                             | Y   |
+| `navigation.racing.startLineStb`           | Location of the starboard (boat) end of the start line                 | `{latitude,longitude}`                             | Y   |
+| `navigation.racing.nextLegHeading`         | True heading for the next leg of the course                            | `rad`                                              |     |
+| `navigation.racing.nextLegTrueWindAngle`   | True Wind Angle for the next leg of the course                         | `rad`                                              |     |
+| `navigation.racing.timeToStart`            | Period of time until the race start                                    | `s`                                                | Y   |
+| `navigation.racing.timeToLine`             | Period of time to sail to the line at best VMG                         | `s`                                                |     |
+| `navigation.racing.timeToBurn`             | Period of time delay before sailing to the at best VMG                 | `s`                                                |     |
+| `navigation.racing.startTime`              | The start time as an ISO timestamp                                     | `rfc3339`                                          |     |
 
 These values can be displayed in KIP widgets, Freeboard-SK, or other Signal K clients.  
 There are dedicated widgets for the start timer and line adjustment since 3.5.0 of KIP 
@@ -93,6 +100,20 @@ If `navigation.headingTrue` is not available, then `navigation.courseOverGroundT
  - A boat within the start zone has the time calculated by the perpendicular distance to the line divided by their effective VMG to the line.
  - A boat outside the start zone also has the perpendicular time plus the time calculated by the parallel distance to the zone divided by their effective VMG in that direction.
  - If the line is changed, then the samples used to calculate the effective VMGs are cleared.
+ - Every sample keeps the `cog` and `sog` that produced it, so the course behind the 90th
+   percentile VMG towards the line can be recovered and is published as
+   `navigation.racing.bestApproach`. The direction is chosen exactly as the time to line
+   chooses its legs, and is reported alongside the course:
+     - Inside the start zone the line is closed across it, so `toCourseSide` is used, or
+       `fromCourseSide` when OCS.
+     - Outside the start zone the boat must first run along the line, so the along-line
+       samples are used, in the direction *away* from the closest end: beyond the pin it
+       must travel towards the starboard end, so `toStbEnd` governs, and vice versa.
+ - The four collected VMGs are published under `navigation.racing.bestVmg.*` and may be manually
+   adjusted. An adjustment stands in for the 90th percentile of the samples, but the VMG the boat
+   is actually sailing still wins if it is better, so an adjustment can never make the estimate
+   ignore real progress. Adjustments are cleared when the start timer reaches zero, when the line
+   changes, and by the `reset` command.
  - If the boat is navigating a route and the next waypoint is beyond the second in the route, then the time to line is not calculated.
 
 
@@ -136,6 +157,38 @@ Used to **set** or **adjust** either end of the start line.
 - `position`: `"bow"` or `{ latitude, longitude }`.
 - `delta`: distance in meters along bearing.
 - `rotate`: angle in radians.
+
+---
+
+### `navigation.racing.swapStartLine`
+
+Used to **swap** the port (pin) and starboard (boat) ends of the line, reversing its bearing.
+Takes no parameters. Collected VMG samples and any manual adjustments are exchanged along
+with the ends rather than discarded, since reversing the bearing flips the sign of both VMG
+components and so leaves every sample valid, just relabelled.
+
+---
+
+### `navigation.racing.setBestVmg`
+
+Used to **adjust** or **reset** the best VMGs used to estimate the time to line.
+
+#### Payload:
+```
+{
+  "vmg": "toCourseSide" | "fromCourseSide" | "toPortEnd" | "toStbEnd",
+  "value": 5.0,
+  "delta": 0.0514,
+  "command": "reset"
+}
+```
+
+- `vmg`: which best VMG to adjust. Optional for `reset`, which otherwise clears all four.
+- `value`: absolute best VMG in `m/s`.
+- `delta`: adjustment in `m/s` applied to the current best VMG.
+- `command`: `"reset"` to clear the override and revert to the collected samples.
+
+An absolute value may also be put directly to `navigation.racing.bestVmg.<name>`.
 
 ---
 
@@ -184,12 +237,72 @@ Bug reports and suggestions are welcome at
 
 ---
 ## Development
+
+### Linking the plugin into a local server
+
 ```text
 npm install
 npm link
 cd ~/.signalk
 npm link signalk-racer
 ```
+
+This replaces `~/.signalk/node_modules/signalk-racer` with a symlink to your checkout, so
+edits take effect on the next server restart with no reinstall. Verify the link with:
+
+```text
+readlink -f ~/.signalk/node_modules/signalk-racer
+```
+
+> ⚠️ **The link is fragile.** `~/.signalk/package.json` still lists `signalk-racer` as a
+> normal dependency, so running `npm install` (or installing/updating *any* plugin from the
+> server's Appstore) will overwrite the symlink with the published release from npm, silently
+> reverting you to the registry version. Re-run `npm link signalk-racer` in `~/.signalk`
+> whenever that happens.
+
+### Checking which build is actually running
+
+The plugin stamps its version in three places, so a stale link is easy to spot:
+
+- the **Plugin Config** page in the admin UI, as the plugin status `signalk-racer <version> started`
+- the bottom of the **racer webapp**
+- the server log, via `app.debug`, including the directory it was loaded from
+
+During development the version carries a `-dev.N` suffix (e.g. `1.2.0-dev.0`), so it is
+immediately distinguishable from a released version installed from npm.
+
+A restart is required for any change to plugin code — the server does not hot-reload plugins.
+Changes to files under `public/` are served statically, so those only need a browser reload
+(with cache bypass: `Ctrl+Shift+R`).
+
+### Running the server on this machine
+
+The server is installed **globally** (`npm root -g` → `/usr/lib/node_modules`) and runs as a
+system service, using `~/.signalk` as its config directory:
+
+```text
+sudo systemctl status signalk       # is it running?
+sudo systemctl restart signalk      # pick up plugin changes
+journalctl -u signalk -f            # follow the log
+```
+
+### Updating signalk-server
+
+Because it is installed into a system directory, updating needs `sudo`, and the service must be
+restarted afterwards:
+
+```text
+npm view signalk-server version                 # latest published
+npm ls -g --depth=0 signalk-server              # currently installed
+sudo npm install -g signalk-server              # update to latest
+sudo systemctl restart signalk
+```
+
+To pin a specific version instead, use `sudo npm install -g signalk-server@2.31.1`.
+
+Note that `~/.signalk/package.json` also lists `signalk-server` as a dependency; that entry is
+only bookkeeping for the Appstore and is **not** what the service runs — the globally installed
+copy in `/usr/lib/node_modules/signalk-server` is. Updating the global copy is what counts.
 
 ---
 ## 🚀 Releasing

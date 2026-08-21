@@ -2,6 +2,10 @@ module.exports = (app) => {
     const state = {
         startLineName: null,
         startLine: null,
+        // Last published best VMGs, so we only send deltas when they actually change.
+        publishedBestVmg: {toCourseSide: null, fromCourseSide: null, toPortEnd: null, toStbEnd: null},
+        publishedBestVmgOverrides: {toCourseSide: null, fromCourseSide: null, toPortEnd: null, toStbEnd: null},
+        publishedBestApproach: 'null',
     };
     const geolib = require('geolib')
     const racerSchema = {
@@ -53,6 +57,11 @@ module.exports = (app) => {
                 title: 'Minimum speed over ground (SOG) in knots to consider for VMG calculations',
                 default: 1.0
             },
+            minVmg: {
+                type: 'number',
+                title: 'Minimum VMG component in m/s for a sample to be collected in that direction',
+                default: 0.01
+            },
             maxDistance: {
                 type: 'number',
                 title: 'Maximum distance to line and/or line zone in meters to consider for VMG calculations',
@@ -99,13 +108,21 @@ module.exports = (app) => {
         }
     }
     const { v4: uuidv4 } = require('uuid');
+    const pluginVersion = require('./package.json').version;
     const {
         initRacer,
         toDegrees,
         toRadians,
         collectVmgSamples,
         resetVmgSamples,
-        computeTimeToLine
+        computeTimeToLine,
+        vmgNames,
+        getAllBestVmg,
+        getBestVmgOverrides,
+        setBestVmg,
+        clearBestVmgOverrides,
+        swapVmgEnds,
+        getBestApproach
     } = require('./racer');
 
     const unsubscribes = [];
@@ -125,6 +142,65 @@ module.exports = (app) => {
                             "description": "Length of the start line",
                             "displayName": "Length of the start line",
                             "shortName": "SLL"
+                        }
+                    },
+                    {
+                        "path": "navigation.racing.startLineBearing",
+                        "value": {
+                            "type": "number",
+                            "units": "rad",
+                            "description": "Bearing of the start line, from the starboard end (boat) to the port end (pin)",
+                            "displayName": "Start line bearing",
+                            "shortName": "SLB"
+                        }
+                    },
+                    {
+                        "path": "navigation.racing.bestApproach",
+                        "value": {
+                            "type": "object",
+                            "description": "The course actually sailed that achieved the best VMG towards the line: {cog in rad, sog in m/s, direction}",
+                            "displayName": "Best approach course",
+                            "shortName": "Approach"
+                        }
+                    },
+                    {
+                        "path": "navigation.racing.bestVmg.toCourseSide",
+                        "value": {
+                            "type": "number",
+                            "units": "m/s",
+                            "description": "Best VMG collected sailing across the start line towards the course side, used to estimate time to line",
+                            "displayName": "Best VMG to course side",
+                            "shortName": "VMG>Course"
+                        }
+                    },
+                    {
+                        "path": "navigation.racing.bestVmg.fromCourseSide",
+                        "value": {
+                            "type": "number",
+                            "units": "m/s",
+                            "description": "Best VMG collected sailing back across the start line away from the course side, used to estimate time to line when OCS",
+                            "displayName": "Best VMG from course side",
+                            "shortName": "VMG<Course"
+                        }
+                    },
+                    {
+                        "path": "navigation.racing.bestVmg.toPortEnd",
+                        "value": {
+                            "type": "number",
+                            "units": "m/s",
+                            "description": "Best VMG collected sailing along the line towards the port end (pin), used to estimate time to line",
+                            "displayName": "Best VMG to port end",
+                            "shortName": "VMG>Port"
+                        }
+                    },
+                    {
+                        "path": "navigation.racing.bestVmg.toStbEnd",
+                        "value": {
+                            "type": "number",
+                            "units": "m/s",
+                            "description": "Best VMG collected sailing along the line towards the starboard end (committee boat), used to estimate time to line",
+                            "displayName": "Best VMG to stb end",
+                            "shortName": "VMG>Stb"
                         }
                     },
                     {
@@ -195,6 +271,27 @@ module.exports = (app) => {
         ]
     });
 
+    // Meta for the manual adjustment sitting beside each best VMG. Generated, since it
+    // is the same shape for all four directions.
+    app.handleMessage('vessels.self', {
+        context: "vessels.self",
+        updates: [
+            {
+                timestamp: new Date().toISOString(),
+                "meta": Object.keys(vmgNames).map(name => ({
+                    "path": `navigation.racing.bestVmg.${name}.override`,
+                    "value": {
+                        "type": "number",
+                        "units": "m/s",
+                        "description": `Manual adjustment standing in for the collected ${name} VMG, null when not adjusted`,
+                        "displayName": `Best VMG ${name} adjustment`,
+                        "shortName": "Adjusted"
+                    }
+                }))
+            }
+        ]
+    });
+
     // send multiple deltas, each in the form of { path, value }
     // null values are preserved (meaningful in SignalK for clearing a value);
     // undefined values are dropped to avoid "Delta is missing value" warnings.
@@ -218,6 +315,73 @@ module.exports = (app) => {
 
         app.debug('Sending deltas:', JSON.stringify(delta));
         app.handleMessage('vessels.self', delta);
+    }
+
+    // Publish the best (collected or overridden) VMGs used to estimate time to line.
+    // processPosition runs on every position delta, so only changed values are sent.
+    function publishBestVmg(position = {}) {
+        const best = state.startLine ? getAllBestVmg() : null;
+        const overrides = state.startLine ? getBestVmgOverrides() : null;
+        const approach = state.startLine
+            ? getBestApproach(position.ocs, position.toZoneVz, position.closestEnd)
+            : null;
+        const deltas = [];
+
+        for (const name of Object.keys(vmgNames)) {
+            const value = best ? Math.round(best[name] * 1000) / 1000 : null;
+            if (state.publishedBestVmg[name] !== value) {
+                state.publishedBestVmg[name] = value;
+                deltas.push({path: `navigation.racing.bestVmg.${name}`, value});
+            }
+
+            // The manual adjustment behind that value, as a sibling of it, or null
+            // when the value is straight from the collected samples.
+            const raw = overrides ? overrides[name] : null;
+            const override = raw == null ? null : Math.round(raw * 1000) / 1000;
+            if (state.publishedBestVmgOverrides[name] !== override) {
+                state.publishedBestVmgOverrides[name] = override;
+                deltas.push({path: `navigation.racing.bestVmg.${name}.override`, value: override});
+            }
+        }
+
+        // The actual course behind the best VMG towards the line, rounded so a sample
+        // change rather than float noise is what triggers a delta.
+        const rounded = approach ? {
+            cog: Math.round(approach.cog * 10000) / 10000,
+            sog: Math.round(approach.sog * 1000) / 1000,
+            direction: approach.direction
+        } : null;
+        const approachJson = JSON.stringify(rounded);
+        if (state.publishedBestApproach !== approachJson) {
+            state.publishedBestApproach = approachJson;
+            deltas.push({path: 'navigation.racing.bestApproach', value: rounded});
+        }
+
+        if (deltas.length > 0)
+            sendDeltas(deltas);
+    }
+
+    function samePosition(a, b) {
+        return !!a && !!b && a.latitude === b.latitude && a.longitude === b.longitude;
+    }
+
+    // Decide what to do with the collected VMG samples when the line is rediscovered.
+    // The samples belong to a particular pair of line ends, tracked as state.vmgLine, so
+    // that writing our own waypoints - or an edit to an unrelated waypoint - does not
+    // discard them, and an exchange of the ends relabels them instead of clearing them.
+    function reconcileVmgSamples(startLine) {
+        const previous = state.vmgLine;
+        if (samePosition(previous?.port, startLine.port) && samePosition(previous?.stb, startLine.stb))
+            return;
+
+        if (samePosition(previous?.port, startLine.stb) && samePosition(previous?.stb, startLine.port)) {
+            app.debug('start line ends exchanged: swapping VMG samples');
+            swapVmgEnds();
+        } else {
+            app.debug('start line changed: resetting VMG samples');
+            resetVmgSamples();
+        }
+        state.vmgLine = {port: startLine.port, stb: startLine.stb};
     }
 
     function waypointToPosition(waypoint) {
@@ -278,6 +442,8 @@ module.exports = (app) => {
         const lines = Array.isArray(state.options.lines) ? state.options.lines : [];
 
         const payload = {
+            // Stamped so a client can tell which build of the plugin is actually running.
+            pluginVersion,
             startLineName: state.startLineName ?? null,
             lines: lines.map(l => ({
                 startLineName: l.startLineName,
@@ -300,6 +466,69 @@ module.exports = (app) => {
         });
     }
     
+    // Set/create the waypoint for one end of the line, if we are configured to do so.
+    // The cached waypoint ids stay bound to the configured waypoint *names*, so a
+    // swap of the ends writes new positions into the same two waypoints.
+    async function setEndWaypoint(end, position, startLine, updateWaypoint) {
+        const startLineOptions = getStartLineOptions();
+        if (!startLineOptions.updateStartLineWaypoint && !updateWaypoint) {
+            app.debug('startline waypoint not updated');
+            return;
+        }
+
+        try {
+            const waypointConfig = `startLine${camelCase(end)}`;
+            app.debug(`waypointConfig: ${waypointConfig}`);
+            const waypointName = startLineOptions[waypointConfig];
+            app.debug(`waypointName: ${waypointName}`);
+            let waypointId = startLine ? startLine[end + 'Id'] : null;
+            app.debug(`waypointId: ${waypointId}`);
+
+            // If we have not cached the Id of the line end, then
+            if (!waypointId) {
+                // Get the ID of the last existing waypoint with the given name.
+                const waypoints = await app.resourcesApi.listResources('waypoints', {});
+                for (const [id, resource] of Object.entries(waypoints)) {
+                    if (resource.name === waypointName) {
+                        waypointId = id;
+                        // don't break here as we want the last waypoint with the given name
+                    }
+                }
+                app.debug(`waypointId: ${waypointId}`);
+            }
+
+            app.debug(`Startline waypoint to set ${end}(${waypointName}/${waypointId}): ${JSON.stringify(position)}`);
+
+            const waypoint = {
+                name: waypointName,
+                feature: {
+                    type: 'Feature',
+                    geometry: {
+                        type: 'Point',
+                        coordinates: [position.longitude, position.latitude]
+                    },
+                    properties: {}
+                },
+                type: end === 'port' ? 'start-pin' : 'start-boat',
+                position: {
+                    latitude: position.latitude,
+                    longitude: position.longitude
+                }
+            }
+
+            app.debug(`waypoint: ${waypointId} -> ${end}/${waypointName} : ${JSON.stringify(waypoint)}`);
+
+            if (!waypointId && startLineOptions.createStartLineWaypoint)
+                waypointId = uuidv4();
+            if (waypointId)
+                await app.resourcesApi.setResource('waypoints', waypointId, waypoint);
+            else
+                app.debug('startline waypoint not created');
+        } catch (err) {
+            app.error(`Failed to set startline waypoint: ${err}`);
+        }
+    }
+
     // Put an absolute position
     async function putStartLineEnd(end, position, callback, updateWaypoint) {
         app.debug(`putStartLineEnd: ${end} ${JSON.stringify(position)}`);
@@ -354,6 +583,7 @@ module.exports = (app) => {
                 sendDeltas([
                     {path: `navigation.racing.startLine${camelCase(end)}`, value: position},
                     {path: 'navigation.racing.startLineLength', value: startLine.length},
+                    {path: 'navigation.racing.startLineBearing', value: toRadians(startLine.bearing)},
                 ]);
             } else {
                 // otherwise we can only send the delta for this end
@@ -363,63 +593,7 @@ module.exports = (app) => {
             }
 
             // Set/create the waypoint if we are configured to do so
-            const startLineOptions = getStartLineOptions();
-            if (startLineOptions.updateStartLineWaypoint || updateWaypoint) {
-                try {
-                    const waypointConfig = `startLine${camelCase(end)}`;
-                    app.debug(`waypointConfig: ${waypointConfig}`);
-                    const waypointName = getStartLineOptions()[waypointConfig];
-                    app.debug(`waypointName: ${waypointName}`);
-                    let waypointId = startLine ? startLine[end + 'Id'] : null;
-                    app.debug(`waypointId: ${waypointId}`);
-
-                    // If we have not cached the Id of the line end, then
-                    if (!waypointId) {
-                        // Get the ID of the last existing waypoint with the given name.
-                        const waypoints = await app.resourcesApi.listResources('waypoints', {});
-                        for (const [id, resource] of Object.entries(waypoints)) {
-                            if (resource.name === waypointName) {
-                                waypointId = id;
-                                // don't break here as we want the last waypoint with the given name
-                            }
-                        }
-                        app.debug(`waypointId: ${waypointId}`);
-                    }
-
-                    app.debug(`Startline waypoint to set ${end}(${waypointName}/${waypointId}): ${JSON.stringify(position)}`);
-
-                    const waypoint = {
-                        name: waypointName,
-                        feature: {
-                            type: 'Feature',
-                            geometry: {
-                                type: 'Point',
-                                coordinates: [position.longitude, position.latitude]
-                            },
-                            properties: {}
-                        },
-                        type: end === 'port' ? 'start-pin' : 'start-boat',
-                        position: {
-                            latitude: position.latitude,
-                            longitude: position.longitude
-                        }
-                    }
-
-                    app.debug(`waypoint: ${waypointId} -> ${end}/${waypointName} : ${JSON.stringify(waypoint)}`);
-
-                    if (!waypointId && startLineOptions.createStartLineWaypoint)
-                        waypointId = uuidv4();
-                    if (waypointId)
-                        await app.resourcesApi.setResource('waypoints', waypointId, waypoint);
-                    else
-                        app.debug('startline waypoint not created');
-                }
-                catch (err) {
-                    app.error(`Failed to set startline waypoint: ${err}`);
-                }
-            } else {
-                app.debug('startline waypoint not updated');
-            }
+            await setEndWaypoint(end, position, startLine, updateWaypoint);
 
             // If we have a startLine, then process position against the new line
             if (startLine)
@@ -498,6 +672,92 @@ module.exports = (app) => {
         }
     }
 
+    // Swap the port and starboard ends of the line, reversing its bearing.
+    async function swapStartLineEnds(context, path, args, callback) {
+        try {
+            app.debug('swapStartLineEnds:', JSON.stringify(args));
+            const startLine = state.startLine ? state.startLine : getStartLine();
+            if (!startLine || !startLine.port || !startLine.stb)
+                return complete(callback, 400, 'Failed to swap the startLine: no line');
+
+            // Swap the positions. The cached waypoint ids stay bound to their configured
+            // names, so each waypoint keeps its identity and receives the other position.
+            const swapped = {...startLine, port: startLine.stb, stb: startLine.port};
+            swapped.length = geolib.getPreciseDistance(swapped.port, swapped.stb, 0.1);
+            swapped.bearing = geolib.getRhumbLineBearing(swapped.stb, swapped.port);
+            app.debug(`swapped startLine: ${JSON.stringify(swapped)}`);
+            state.startLine = swapped;
+
+            // Every collected VMG sample is still valid, just relabelled. Record the
+            // ends they now belong to, so the rescan triggered by our own waypoint
+            // writes below sees no change and leaves them alone.
+            swapVmgEnds();
+            state.vmgLine = {port: swapped.port, stb: swapped.stb};
+
+            // Send both ends together, so no consumer ever sees a half swapped line.
+            sendDeltas([
+                {path: 'navigation.racing.startLinePort', value: swapped.port},
+                {path: 'navigation.racing.startLineStb', value: swapped.stb},
+                {path: 'navigation.racing.startLineLength', value: swapped.length},
+                {path: 'navigation.racing.startLineBearing', value: toRadians(swapped.bearing)},
+            ]);
+
+            await setEndWaypoint('port', swapped.port, swapped);
+            await setEndWaypoint('stb', swapped.stb, swapped);
+
+            processPosition(null);
+            processWind();
+            return complete(callback, 200, 'Swap start line ends: OK');
+        } catch (err) {
+            return complete(callback, 500, 'Failed to swap the startLine: ' + err);
+        }
+    }
+
+    // Set, adjust or reset the best VMGs used to estimate time to line.
+    async function setBestVmgCommand(context, path, args, callback) {
+        try {
+            app.debug('setBestVmgCommand:', JSON.stringify(args));
+            if (!args)
+                return complete(callback, 400, 'Failed to set best VMG: no value');
+
+            if (args.command === 'reset') {
+                // No vmg name clears every override.
+                if (!clearBestVmgOverrides(args.vmg))
+                    return complete(callback, 400, 'Failed to reset best VMG: unknown vmg');
+                publishBestVmg();
+                return complete(callback, 200, 'Reset best VMG: OK');
+            }
+
+            const value = setBestVmg(args.vmg, args);
+            if (value === null)
+                return complete(callback, 400, 'Failed to set best VMG: unknown vmg, or no value/delta');
+            publishBestVmg();
+            return complete(callback, 200, `Set best VMG ${args.vmg}: OK`);
+        } catch (err) {
+            return complete(callback, 500, 'Failed to set best VMG: ' + err);
+        }
+    }
+
+    // Direct put to navigation.racing.bestVmg.<name>, accepting either a bare
+    // number (m/s) or a {value} / {delta} object.
+    function putBestVmg(name, value, callback) {
+        try {
+            const args = (value !== null && typeof value === 'object') ? value : {value};
+            if (setBestVmg(name, args) === null)
+                return complete(callback, 400, `Failed to put best VMG ${name}: invalid value`);
+            publishBestVmg();
+            return complete(callback, 200, `Put best VMG ${name}: OK`);
+        } catch (err) {
+            return complete(callback, 500, `Failed to put best VMG ${name}: ` + err);
+        }
+    }
+
+    // At the gun, manual VMG adjustments give way to the collected samples.
+    function clearBestVmgOverridesAtStart() {
+        clearBestVmgOverrides();
+        publishBestVmg();
+    }
+
     function setTimer() {
         if (state.timerInterval)
             clearInterval(state.timerInterval);
@@ -508,6 +768,8 @@ module.exports = (app) => {
             }
             state.timeToStart--;
             sendDeltas([{path: 'navigation.racing.timeToStart', value: state.timeToStart}]);
+            if (state.timeToStart <= 0)
+                clearBestVmgOverridesAtStart();
         }, 1000);
     }
 
@@ -588,6 +850,7 @@ module.exports = (app) => {
                             {path: 'navigation.racing.timeToStart', value: 0},
                             {path: 'navigation.racing.startTime', value: null}
                         ]);
+                        clearBestVmgOverridesAtStart();
                         return complete(callback, 200, 'set timer: Ignored negative start time');
                     }
 
@@ -688,11 +951,12 @@ module.exports = (app) => {
 
                     app.debug(`STARTLINE: startLinePort: ${JSON.stringify(startLine)}`);
                     state.startLine = startLine;
-                    resetVmgSamples();
+                    reconcileVmgSamples(startLine);
                     deltas = [
                         {path: 'navigation.racing.startLinePort', value: startLine.port},
                         {path: 'navigation.racing.startLineStb', value: startLine.stb},
                         {path: 'navigation.racing.startLineLength', value: startLine.length},
+                        {path: 'navigation.racing.startLineBearing', value: toRadians(startLine.bearing)},
                     ].filter(entry => entry.value !== null && entry.value !== undefined);
                 } else {
                     app.debug(`STARTLINE: undefined`);
@@ -701,6 +965,7 @@ module.exports = (app) => {
                         {path: 'navigation.racing.startLinePort', value: null},
                         {path: 'navigation.racing.startLineStb', value: null},
                         {path: 'navigation.racing.startLineLength', value: null},
+                        {path: 'navigation.racing.startLineBearing', value: null},
                     ];
                 }
                 if (deltas.length > 0) {
@@ -823,15 +1088,17 @@ module.exports = (app) => {
                 {path: "navigation.racing.timeToLine", value: ttl},
                 {path: "navigation.racing.timeToBurn", value: ttb}
             ]);
+            publishBestVmg({ocs, toZoneVz, closestEnd});
 
         } else if (state.distanceToLine) {
             state.distanceToLine = null;
             sendDeltas([
                 {path: 'navigation.racing.distanceStartline', value: null},
-                {path: 'navigation.racing.startLineBias', value: null},
+                {path: 'navigation.racing.stbLineBias', value: null},
                 {path: 'navigation.racing.timeToLine', value: null},
                 {path: 'navigation.racing.timeToBurn', value: null},
             ]);
+            publishBestVmg();
         }
     }
 
@@ -974,6 +1241,7 @@ module.exports = (app) => {
 
             initRacer({
                 minSog: options.minSog ?? 1.0,
+                minVmg: options.minVmg ?? 0.01,
                 maxDistance: options.maxDistance ?? 2000,
                 maxSamples: options.maxSamples ?? 600,
                 percentile: options.percentile ?? 0.9
@@ -982,6 +1250,11 @@ module.exports = (app) => {
             app.debug('startLinePort:' + options.startLinePort);
             app.debug('startLineStb:' + options.startLineStb);
             app.debug('app.selfId:' + app.selfId);
+
+            // Show the running build in the admin UI, so a stale link or a registry
+            // install is obvious at a glance.
+            app.setPluginStatus?.(`signalk-racer ${pluginVersion} started`);
+            app.debug(`signalk-racer ${pluginVersion} loaded from ${__dirname}`);
 
             let fromBow = app.getSelfPath('sensors.gps.fromBow');
             let fromCenter = app.getSelfPath('sensors.gps.fromCenter');
@@ -1178,10 +1451,18 @@ module.exports = (app) => {
             app.registerPutHandler('vessels.self', 'navigation.racing.startLinePort', (ctx, path, value, callback) => putStartLineEnd('port', value, callback));
             app.registerPutHandler('vessels.self', 'navigation.racing.startLineStb', (ctx, path, value, callback) => putStartLineEnd('stb', value, callback));
 
+            // register to the best VMG paths, so they can be adjusted by a direct put
+            for (const name of Object.keys(vmgNames)) {
+                app.registerPutHandler('vessels.self', `navigation.racing.bestVmg.${name}`,
+                    (ctx, path, value, callback) => putBestVmg(name, value, callback));
+            }
+
             // register to API paths for this plugin
             app.registerPutHandler('vessels.self', 'navigation.racing.setStartLineName', setStartLineName);
             app.registerPutHandler('vessels.self', 'navigation.racing.setStartLine', setStartLine);
+            app.registerPutHandler('vessels.self', 'navigation.racing.swapStartLine', swapStartLineEnds);
             app.registerPutHandler('vessels.self', 'navigation.racing.setStartTime', startTimeCommand);
+            app.registerPutHandler('vessels.self', 'navigation.racing.setBestVmg', setBestVmgCommand);
         },
 
         stop: () => {

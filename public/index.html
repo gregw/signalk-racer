@@ -48,6 +48,52 @@
         .stb-move    { background-color: #080; color: white;}
         .stb-rotate  { background-color: #080; color: white; }
 
+        .line-swap { background-color: #555; color: white; font-size: 1.3em; font-weight: bold; }
+
+        .viz-row {
+            margin-top: 1em;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5em;
+        }
+
+        .vmg-cross {
+            display: grid;
+            grid-template-columns: repeat(3, auto);
+            align-items: center;
+            justify-items: center;
+            gap: 0 0.8em;
+        }
+
+        .viz { width: 100%; max-width: 400px; }
+
+        .vmg-row { display: flex; align-items: center; justify-content: center; gap: 0.15em; }
+
+        /* TTL and DTL flank the top of the cross. They are bottom aligned, so the large
+           type grows upwards and the numbers rise clear above the rest of the cross. */
+        .cross-stat { align-self: end; line-height: 1; }
+        .cross-stat-label { font-size: 0.65em; color: #aaa; }
+        .cross-stat-value { font-size: 3.6em; font-weight: bold; font-family: monospace; }
+        .vmg-value { min-width: 2.2em; font-size: 1.2em; font-weight: bold; line-height: 1; }
+        /* The row pitch is set by this button: its vertical padding and leading, not the
+           grid gap, are what stack the arms apart. */
+        .vmg-adjust {
+            background-color: #333;
+            color: white;
+            padding: 0.1em 0.5em;
+            font-size: 0.9em;
+            line-height: 1;
+        }
+        .vmg-reset { background-color: #333; color: white; padding: 0.4em 0.5em; font-size: 0.8em; }
+
+        #timeToStart {
+            font-size: 3em;
+            font-weight: bold;
+            font-family: monospace;
+            line-height: 1.1;
+        }
+
         #startLineSelect {
             font-size: 1em;
             padding: 0.3em;
@@ -79,6 +125,251 @@
         return degrees ? degrees * (Math.PI / 180) : null;
     }
 
+    const KNOTS_TO_MS = 0.514444;
+    const EARTH_RADIUS = 6371000;
+    const VMG_NAMES = ['toCourseSide', 'fromCourseSide', 'toPortEnd', 'toStbEnd'];
+
+    // Everything the line visualization needs, filled in from the delta stream.
+    const nav = {
+        port: null,
+        stb: null,
+        position: null,
+        headingTrue: null,
+        cog: null,
+        sog: null,
+        timeToStart: null,
+        timerRunning: false,
+        timeToLine: null,
+        distanceToLine: null,
+        lineLength: null,
+        lineBearing: null,
+        bestApproach: null,
+        bestVmg: {toCourseSide: null, fromCourseSide: null, toPortEnd: null, toStbEnd: null},
+        overrides: {toCourseSide: null, fromCourseSide: null, toPortEnd: null, toStbEnd: null}
+    };
+
+    let renderPending = false;
+
+    function scheduleRender() {
+        if (renderPending) return;
+        renderPending = true;
+        requestAnimationFrame(() => {
+            renderPending = false;
+            renderLine();
+            renderVmg();
+            renderStats();
+        });
+    }
+
+    // Offset of a point from the starboard end, in metres east/north.
+    // Equirectangular is exact enough here: a start line is a few hundred metres.
+    function offsetFrom(origin, point) {
+        const lat0 = origin.latitude * Math.PI / 180;
+        return {
+            e: (point.longitude - origin.longitude) * Math.PI / 180 * Math.cos(lat0) * EARTH_RADIUS,
+            n: (point.latitude - origin.latitude) * Math.PI / 180 * EARTH_RADIUS
+        };
+    }
+
+    // Resolve the line into the coordinate system the drawing uses:
+    //   a = distance along the line from the starboard (boat) end towards the port (pin) end
+    //   c = distance across the line, positive on the pre-start side (negative is OCS)
+    function lineGeometry() {
+        if (!nav.port || !nav.stb) return null;
+
+        const v = offsetFrom(nav.stb, nav.port);
+        const length = Math.hypot(v.e, v.n);
+        if (!(length > 0)) return null;
+
+        // Unit vector along the line, starboard end -> port end.
+        const u = {e: v.e / length, n: v.n / length};
+        // The pre-start side lies 90 degrees anticlockwise of the line bearing.
+        const across = {e: -u.n, n: u.e};
+        const bearing = (Math.atan2(u.e, u.n) * 180 / Math.PI + 360) % 360;
+
+        let boat = null;
+        if (nav.position && typeof nav.position.latitude === 'number') {
+            const p = offsetFrom(nav.stb, nav.position);
+            boat = {
+                a: p.e * u.e + p.n * u.n,
+                c: p.e * across.e + p.n * across.n
+            };
+        }
+
+        return {length, bearing, boat};
+    }
+
+    function renderLine() {
+        const svg = document.getElementById('lineSvg');
+        const info = document.getElementById('lineInfo');
+        if (!svg) return;
+
+        const geo = lineGeometry();
+        if (!geo) {
+            svg.innerHTML = '<text x="200" y="130" text-anchor="middle" fill="#888"' +
+                ' font-size="14">No start line set</text>';
+            if (info) info.textContent = '';
+            return;
+        }
+
+        const W = 400, H = 260, margin = 34;
+        const boat = geo.boat;
+
+        // Fit the line and the boat, keeping the across axis from collapsing when
+        // the boat is sitting on the line.
+        const minA = Math.min(0, boat ? boat.a : 0);
+        const maxA = Math.max(geo.length, boat ? boat.a : geo.length);
+        const minC = Math.min(0, boat ? boat.c : 0);
+        const maxC = Math.max(0, boat ? boat.c : 0);
+
+        const spanA = Math.max(maxA - minA, 1);
+        const spanC = Math.max(maxC - minC, spanA * 0.35);
+        const scale = Math.min((W - 2 * margin) / spanA, (H - 2 * margin) / spanC);
+
+        const midA = (minA + maxA) / 2;
+        const midC = (minC + maxC) / 2;
+        // The port (pin) end draws to the left, so the along axis runs against screen x.
+        const sx = (a) => W / 2 - (a - midA) * scale;
+        // The pre-start side draws below the line, so across runs with screen y.
+        const sy = (c) => H / 2 + (c - midC) * scale;
+
+        const portX = sx(geo.length), stbX = sx(0), lineY = sy(0);
+        const parts = [];
+
+        parts.push(`<line x1="${portX}" y1="${lineY}" x2="${stbX}" y2="${lineY}"` +
+            ` stroke="#ddd" stroke-width="2" stroke-dasharray="6 5"/>`);
+
+        // Prefer the published length and bearing, falling back to the computed geometry.
+        const length = nav.lineLength != null ? nav.lineLength : geo.length;
+        const lineBearing = nav.lineBearing != null
+            ? (nav.lineBearing * 180 / Math.PI + 360) % 360
+            : geo.bearing;
+        // The heading worth reporting is the one you sail to cross the line: perpendicular
+        // to it, towards the course side. That is 90 degrees clockwise of the line bearing
+        // (which runs starboard end -> port end), and in this line-up view it is always
+        // straight up the screen.
+        const startBearing = (lineBearing + 90) % 360;
+
+        // Length and start heading sit just on the OCS (course) side of the line, which
+        // is always the upper side here. Haloed so the dashes do not show through; the
+        // line can be shorter than the label, which is accepted.
+        const label = `${length.toFixed(0)}m · ${startBearing.toFixed(0).padStart(3, '0')}°T`;
+        const labelY = lineY - 8;
+        const labelX = (portX + stbX) / 2 - 14;
+        parts.push(`<text x="${labelX}" y="${labelY}" text-anchor="middle" fill="#ddd"` +
+            ` font-size="22" stroke="#000" stroke-width="6" paint-order="stroke">${label}</text>`);
+
+        // Arrow beside the heading, pointing the way to sail to start.
+        const ax = labelX + (label.length * 11.2) / 2 + 14;
+        parts.push(`<polygon points="${ax},${labelY - 20} ${ax - 7},${labelY - 4} ${ax + 7},${labelY - 4}"` +
+            ` fill="#ddd" stroke="#000" stroke-width="3" paint-order="stroke"/>`);
+
+        // The end labels go on the pre-start side, clear of the heading label above.
+        parts.push(`<circle cx="${portX}" cy="${lineY}" r="7" fill="#f88" stroke="#fff"/>`);
+        parts.push(`<text x="${portX}" y="${lineY + 22}" text-anchor="middle" fill="#f88"` +
+            ` font-size="12" stroke="#000" stroke-width="3" paint-order="stroke">Port</text>`);
+
+        // A rough committee boat: hull with a raked bow, plus a cabin.
+        parts.push(`<polygon points="${stbX - 13},${lineY - 4} ${stbX + 11},${lineY - 4}` +
+            ` ${stbX + 9},${lineY + 4} ${stbX - 7},${lineY + 4}"` +
+            ` fill="#8f8" stroke="#fff" stroke-width="1"/>`);
+        parts.push(`<rect x="${stbX - 3}" y="${lineY - 10}" width="9" height="6"` +
+            ` fill="#8f8" stroke="#fff" stroke-width="1"/>`);
+        parts.push(`<text x="${stbX}" y="${lineY + 22}" text-anchor="middle" fill="#8f8"` +
+            ` font-size="12" stroke="#000" stroke-width="3" paint-order="stroke">Stb</text>`);
+
+        if (boat) {
+            const bx = sx(boat.a), by = sy(boat.c);
+            // A compass bearing b maps to the screen vector (-cos, -sin) of (b - lineBearing).
+            const screenVector = (bearing) => {
+                const t = bearing - geo.bearing * Math.PI / 180;
+                return {x: -Math.cos(t), y: -Math.sin(t)};
+            };
+
+            // Projections from the boat. While the timer counts down, the thick line runs
+            // along the current COG for the distance the boat will actually cover before
+            // the gun, so its tip shows where it gets to at zero: short of the line is
+            // late, beyond it is early. The thin faint line replays the course actually
+            // sailed behind the best VMG towards the line, on its own bearing, so the two
+            // tips compare where you are heading with where you could be heading.
+            // With no timer running only a course stub is drawn.
+            if (nav.cog != null) {
+                const run = nav.timerRunning && nav.timeToStart > 0;
+                const v = screenVector(nav.cog);
+                // Clamped past the far corner of the viewBox: a long countdown projects
+                // well off the drawing, and it is clipped there anyway.
+                const project = (speed) => Math.min(speed * nav.timeToStart * scale, 600);
+                const cogLine = (length, width, opacity) =>
+                    parts.push(`<line x1="${bx.toFixed(1)}" y1="${by.toFixed(1)}"` +
+                        ` x2="${(bx + v.x * length).toFixed(1)}" y2="${(by + v.y * length).toFixed(1)}"` +
+                        ` stroke="#6cf" stroke-width="${width}" stroke-opacity="${opacity}"/>`);
+
+                if (run) {
+                    // The thin line is a course the boat has genuinely sailed - the cog and
+                    // sog recorded against the best VMG towards the line - so it runs on its
+                    // own bearing, not the current one.
+                    const approach = nav.bestApproach;
+                    if (approach && approach.sog > 0) {
+                        const av = screenVector(approach.cog);
+                        const length = project(approach.sog);
+                        parts.push(`<line x1="${bx.toFixed(1)}" y1="${by.toFixed(1)}"` +
+                            ` x2="${(bx + av.x * length).toFixed(1)}"` +
+                            ` y2="${(by + av.y * length).toFixed(1)}"` +
+                            ` stroke="#6cf" stroke-width="1" stroke-opacity="0.3"/>`);
+                    }
+                    if (nav.sog != null)
+                        cogLine(project(nav.sog), 3, 0.55);
+                } else {
+                    cogLine(40, 3, 0.55);
+                }
+            }
+
+            const heading = nav.headingTrue != null ? nav.headingTrue : nav.cog;
+            const ok = heading != null;
+            const v = ok ? screenVector(heading) : {x: 0, y: -1};
+            const dx = v.x, dy = v.y;
+            const px = -dy, py = dx;
+            const pts = [
+                [bx + dx * 11, by + dy * 11],
+                [bx - dx * 7 + px * 6, by - dy * 7 + py * 6],
+                [bx - dx * 7 - px * 6, by - dy * 7 - py * 6]
+            ].map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
+            parts.push(`<polygon points="${pts}" fill="${boat.c < 0 ? '#fc0' : '#6cf'}"` +
+                ` stroke="#fff" stroke-width="1"/>`);
+        }
+
+        svg.innerHTML = parts.join('');
+
+        if (info)
+            info.textContent = boat ? (boat.c < 0 ? 'OCS' : 'behind line') : '';
+    }
+
+    // Time and distance to the line, flanking the top of the cross.
+    function renderStats() {
+        const ttl = document.getElementById('timeToLine');
+        if (ttl)
+            ttl.textContent = formatTimeToMMSS(nav.timeToLine);
+
+        const dtl = document.getElementById('distanceToLine');
+        if (dtl) {
+            const value = nav.distanceToLine;
+            dtl.textContent = value == null ? '--' : `${Math.round(value)}m`;
+            // Negative is over the line, the one case worth catching at a glance.
+            dtl.style.color = value != null && value < 0 ? '#fc0' : '#fff';
+        }
+    }
+
+    function renderVmg() {
+        for (const name of VMG_NAMES) {
+            const el = document.getElementById('vmg-' + name);
+            if (!el) continue;
+            const value = nav.bestVmg[name];
+            el.textContent = value == null ? '--' : (value / KNOTS_TO_MS).toFixed(1);
+            // Manually adjusted values are highlighted, so it is clear what is not collected.
+            el.style.color = nav.overrides[name] != null ? '#fc0' : '#fff';
+        }
+    }
+
     function connectWebSocket() {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const socketUrl = protocol + '//' + window.location.host + '/signalk/v1/stream?subscribe=none';
@@ -89,10 +380,12 @@
             socket.send(JSON.stringify({
                 context: "vessels.self",
                 subscribe: [
-                    {
-                        path: "navigation.racing.*",
-                        policy: "instant"
-                    }
+                    {path: "navigation.racing.*", policy: "instant"},
+                    // Needed to place the boat against the line in the visualization.
+                    {path: "navigation.position", period: 1000},
+                    {path: "navigation.courseOverGroundTrue", period: 1000},
+                    {path: "navigation.headingTrue", period: 1000},
+                    {path: "navigation.speedOverGround", period: 1000}
                 ]
             }));
         };
@@ -111,16 +404,63 @@
                         update.values.forEach(value => {
                             switch (value.path) {
                                 case "navigation.racing.startLineLength":
-                                    // document.getElementById("lineLength").value = value.value.toFixed(1);
+                                    nav.lineLength = value.value;
+                                    scheduleRender();
+                                    break;
+                                case "navigation.racing.startLineBearing":
+                                    nav.lineBearing = value.value;
+                                    scheduleRender();
+                                    break;
+                                case "navigation.racing.startLinePort":
+                                    nav.port = value.value;
+                                    scheduleRender();
+                                    break;
+                                case "navigation.racing.startLineStb":
+                                    nav.stb = value.value;
+                                    scheduleRender();
+                                    break;
+                                case "navigation.position":
+                                    nav.position = value.value;
+                                    scheduleRender();
+                                    break;
+                                case "navigation.headingTrue":
+                                    nav.headingTrue = value.value;
+                                    scheduleRender();
+                                    break;
+                                case "navigation.courseOverGroundTrue":
+                                    nav.cog = value.value;
+                                    scheduleRender();
+                                    break;
+                                case "navigation.speedOverGround":
+                                    nav.sog = value.value;
+                                    scheduleRender();
+                                    break;
+                                case "navigation.racing.bestApproach":
+                                    nav.bestApproach = value.value;
+                                    scheduleRender();
+                                    break;
+                                case "navigation.racing.timeToLine":
+                                    nav.timeToLine = value.value;
+                                    scheduleRender();
+                                    break;
+                                case "navigation.racing.distanceStartline":
+                                    nav.distanceToLine = value.value;
+                                    scheduleRender();
                                     break;
                                 case "navigation.racing.stbLineBias":
-                                    // document.getElementById("lineBias").value = value.value.toFixed(1);
                                     break;
-                                case "navigation.racing.timeToStart":
-                                    let timer = document.getElementById('timeToStart');
+                                case "navigation.racing.timeToStart": {
+                                    nav.timeToStart = value.value;
+                                    const timer = document.getElementById('timeToStart');
                                     if (timer) timer.textContent = formatTimeToMMSS(value.value);
+                                    scheduleRender();
                                     break;
+                                }
                                 case "navigation.racing.startTime": {
+                                    // The plugin clears startTime whenever the timer is not
+                                    // counting down, so it doubles as the running flag.
+                                    nav.timerRunning = !!value.value;
+                                    scheduleRender();
                                     if (!value.value) {
                                         document.getElementById('startTime').value = "HH:MM:SS";
                                     } else {
@@ -134,9 +474,28 @@
                                     }
                                     break;
                                 }
-                                default:
+                                default: {
+                                    // navigation.racing.bestVmg.<name>, and the manual
+                                    // adjustment alongside it at .<name>.override
+                                    const prefix = "navigation.racing.bestVmg.";
+                                    if (value.path.startsWith(prefix)) {
+                                        const rest = value.path.slice(prefix.length);
+                                        const isOverride = rest.endsWith(".override");
+                                        const name = isOverride
+                                            ? rest.slice(0, -".override".length)
+                                            : rest;
+                                        if (VMG_NAMES.includes(name)) {
+                                            if (isOverride)
+                                                nav.overrides[name] = value.value;
+                                            else
+                                                nav.bestVmg[name] = value.value;
+                                            scheduleRender();
+                                            break;
+                                        }
+                                    }
                                     console.log("Received value: " + value.path + " = " + JSON.stringify(value.value));
                                     break;
+                                }
                             }
                         });
                     }
@@ -177,6 +536,108 @@
         console.log("sendAdjustStartLine: " + message);
         socket.send(message);
         updateStatus(`Sent ${delta}m ${rotate}° request for ${end}`);
+    }
+
+    // The racing paths are subscribed with policy "instant", so they only arrive when
+    // they change - which for the line ends may be never. Seed the current state once.
+    function loadInitialState() {
+        fetch(window.location.origin + '/signalk/v1/api/vessels/self/navigation')
+            .then(res => {
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                return res.json();
+            })
+            .then(data => {
+                const leaf = (node) => (node && node.value !== undefined) ? node.value : null;
+                const racing = data.racing || {};
+
+                nav.port = leaf(racing.startLinePort);
+                nav.stb = leaf(racing.startLineStb);
+                nav.lineLength = leaf(racing.startLineLength);
+                nav.lineBearing = leaf(racing.startLineBearing);
+                nav.position = leaf(data.position);
+                nav.headingTrue = leaf(data.headingTrue);
+                nav.cog = leaf(data.courseOverGroundTrue);
+                nav.sog = leaf(data.speedOverGround);
+                nav.timeToStart = leaf(racing.timeToStart);
+                nav.timerRunning = !!leaf(racing.startTime);
+                nav.timeToLine = leaf(racing.timeToLine);
+                nav.distanceToLine = leaf(racing.distanceStartline);
+
+                const bestVmg = racing.bestVmg || {};
+                for (const name of VMG_NAMES) {
+                    nav.bestVmg[name] = leaf(bestVmg[name]);
+                    // The adjustment is a child node of the value it stands in for.
+                    nav.overrides[name] = leaf(bestVmg[name] && bestVmg[name].override);
+                }
+
+                // The timer only sends deltas while it is counting down, so a stopped
+                // timer would otherwise leave the countdown and start time blank.
+                const timer = document.getElementById('timeToStart');
+                if (timer && timer.textContent === '--:--')
+                    timer.textContent = formatTimeToMMSS(leaf(racing.timeToStart));
+
+                const at = document.getElementById('startTime');
+                if (at && !at.value) {
+                    const value = leaf(racing.startTime);
+                    at.value = value
+                        ? new Date(value).toLocaleTimeString([], {
+                            hour: '2-digit', minute: '2-digit', second: '2-digit'
+                        })
+                        : 'HH:MM:SS';
+                }
+
+                scheduleRender();
+            })
+            .catch(err => {
+                console.error('Failed to load initial state:', err);
+                updateStatus('Failed to load initial state: ' + err.message);
+            });
+    }
+
+    function sendSwapStartLine() {
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            updateStatus('WebSocket not connected.');
+            return;
+        }
+        socket.send(JSON.stringify({
+            context: 'vessels.self',
+            put: {
+                path: 'navigation.racing.swapStartLine',
+                value: {}
+            }
+        }));
+        updateStatus('Sent request to swap the line ends');
+    }
+
+    // Adjust a best VMG. The UI works in knots, the model in m/s.
+    function adjustBestVmg(vmg, deltaKnots) {
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            updateStatus('WebSocket not connected.');
+            return;
+        }
+        socket.send(JSON.stringify({
+            context: 'vessels.self',
+            put: {
+                path: 'navigation.racing.setBestVmg',
+                value: {vmg, delta: deltaKnots * KNOTS_TO_MS}
+            }
+        }));
+        updateStatus(`Sent ${deltaKnots > 0 ? '+' : ''}${deltaKnots.toFixed(1)}kn for ${vmg}`);
+    }
+
+    function resetBestVmg() {
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            updateStatus('WebSocket not connected.');
+            return;
+        }
+        socket.send(JSON.stringify({
+            context: 'vessels.self',
+            put: {
+                path: 'navigation.racing.setBestVmg',
+                value: {command: 'reset'}
+            }
+        }));
+        updateStatus('Sent request to reset the best VMGs');
     }
 
     function loadStartLines() {
@@ -226,6 +687,12 @@
                     }
                 }
 
+                const version = document.getElementById('pluginVersion');
+                if (version)
+                    version.textContent = payload.pluginVersion
+                        ? `signalk-racer ${payload.pluginVersion}`
+                        : 'signalk-racer (version not reported)';
+
                 updateStatus('Loaded start lines: ' + payload.lines.length + ' lines');
             })
             .catch(err => {
@@ -271,11 +738,15 @@
     // connect WS and load lines once the page is running
     connectWebSocket();
     loadStartLines();
+    loadInitialState();
 
     function formatTimeToMMSS(seconds) {
-        const mm = Math.floor(seconds / 60);
-        const ss = Math.floor(seconds % 60);
-        return `${mm.toString().padStart(2, '0')}:${ss.toString().padStart(2, '0')}`;
+        if (seconds == null || isNaN(seconds)) return '--:--';
+        const sign = seconds < 0 ? '-' : '';
+        const total = Math.floor(Math.abs(seconds));
+        const mm = Math.floor(total / 60);
+        const ss = total % 60;
+        return `${sign}${mm.toString().padStart(2, '0')}:${ss.toString().padStart(2, '0')}`;
     }
 
     function adjustStartTime(deltaSeconds) {
@@ -346,9 +817,11 @@
 </script>
 
 <div style="display: flex; justify-content: center; align-items: center; gap: 3em; flex-wrap: wrap;">
-    <div style="display: grid; grid-template-columns: repeat(6, auto); grid-template-rows: repeat(3, auto); gap: 0.5em;">
+    <div style="display: grid; grid-template-columns: repeat(7, auto); grid-template-rows: repeat(3, auto); gap: 0.5em;">
         <div></div>
         <button class="port-rotate" onclick="sendAdjustStartLine('port', 0, 1)">+1°</button>
+        <div></div>
+
         <div></div>
 
         <div></div>
@@ -361,6 +834,8 @@
         <button class="port-set" onclick="sendSetStartLine('port')">Port</button>
         <button class="port-move" onclick="sendAdjustStartLine('port', -5, 0)">-5m</button>
 
+        <button class="line-swap" onclick="sendSwapStartLine()" title="Swap the port and starboard ends">&#8596;</button>
+
         <button class="stb-move" onclick="sendAdjustStartLine('stb', -5, 0)">-5m</button>
         <button class="stb-set" onclick="sendSetStartLine('stb')">Stbd</button>
         <button class="stb-move" onclick="sendAdjustStartLine('stb', 5, 0)">+5m</button>
@@ -370,16 +845,75 @@
         <div></div>
         <button class="port-rotate" onclick="sendAdjustStartLine('port', 0, -1)">-1°</button>
         <div></div>
+
+        <div></div>
+
         <div></div>
         <button class="stb-rotate" onclick="sendAdjustStartLine('stb', 0, 1)">-1°</button>
         <div></div>
     </div>
 </div>
 
+<!-- Start line visualization, with the best VMGs as a cross below it. The cross needs
+     no labels: it is laid out to match the drawing directly above it, so course side is
+     up, from the course side is down, and the port and starboard ends are left and right.
+     The names are on the title attributes for hover. -->
+<div class="viz-row">
+    <div class="viz">
+        <svg id="lineSvg" viewBox="0 0 400 260" width="100%" style="max-width: 400px;"></svg>
+        <div id="lineInfo" style="font-size: 0.9em; color: #aaa;"></div>
+    </div>
+
+    <div class="vmg-cross">
+        <div class="cross-stat" title="Time to line at the effective VMG">
+            <div class="cross-stat-label">TTL</div>
+            <div class="cross-stat-value" id="timeToLine">--:--</div>
+        </div>
+        <div class="vmg-row" title="Best VMG across the line towards the course side">
+            <button class="vmg-adjust" onclick="adjustBestVmg('toCourseSide', -0.1)">&minus;</button>
+            <span class="vmg-value" id="vmg-toCourseSide">--</span>
+            <button class="vmg-adjust" onclick="adjustBestVmg('toCourseSide', 0.1)">+</button>
+        </div>
+        <div class="cross-stat" title="Distance from the bow to the line, negative when OCS">
+            <div class="cross-stat-label">DTL</div>
+            <div class="cross-stat-value" id="distanceToLine">--</div>
+        </div>
+
+        <div class="vmg-row" title="Best VMG along the line towards the port end (pin)">
+            <button class="vmg-adjust" onclick="adjustBestVmg('toPortEnd', -0.1)">&minus;</button>
+            <span class="vmg-value" id="vmg-toPortEnd">--</span>
+            <button class="vmg-adjust" onclick="adjustBestVmg('toPortEnd', 0.1)">+</button>
+        </div>
+        <button class="vmg-reset" onclick="resetBestVmg()" title="Clear all manual VMG adjustments">Reset</button>
+        <div class="vmg-row" title="Best VMG along the line towards the starboard end (committee boat)">
+            <button class="vmg-adjust" onclick="adjustBestVmg('toStbEnd', -0.1)">&minus;</button>
+            <span class="vmg-value" id="vmg-toStbEnd">--</span>
+            <button class="vmg-adjust" onclick="adjustBestVmg('toStbEnd', 0.1)">+</button>
+        </div>
+
+        <div></div>
+        <div class="vmg-row" title="Best VMG back across the line from the course side, used when OCS">
+            <button class="vmg-adjust" onclick="adjustBestVmg('fromCourseSide', -0.1)">&minus;</button>
+            <span class="vmg-value" id="vmg-fromCourseSide">--</span>
+            <button class="vmg-adjust" onclick="adjustBestVmg('fromCourseSide', 0.1)">+</button>
+        </div>
+        <div></div>
+    </div>
+</div>
+<div style="font-size: 0.8em; color: #888;">
+    Best VMG in knots &middot; <span style="color: #fc0;">adjusted</span> values revert at the start
+</div>
+
 <!-- Start-line selector -->
 <div style="margin-top: 1em;">
     <label for="startLineSelect">Start line:</label>
     <select id="startLineSelect" onchange="setStartLineName(this.value)"></select>
+</div>
+
+<!-- Race countdown -->
+<div style="margin-top: 1em;">
+    <div style="font-size: 0.75em; color: #aaa;">Time to start</div>
+    <div id="timeToStart">--:--</div>
 </div>
 
 <!-- Start Time Row -->
@@ -400,6 +934,7 @@
 </div>
 
 <div id="status">Connecting...</div>
+<div id="pluginVersion" style="margin-top: 0.5em; font-size: 0.8em; color: #888;">signalk-racer</div>
 
 </body>
 </html>

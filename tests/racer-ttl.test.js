@@ -22,10 +22,10 @@ describe('racer ttl', () => {
 
     test('timeToLineSmallVmg: small VMG', () => {
         resetVmgSamples();
-        _vmgState.vmgToLinePos.sorted.push(1, 1, 1);
-        _vmgState.vmgToLineNeg.sorted.push(2, 2, 2);
-        _vmgState.vmgToZonePort.sorted.push(1, 1, 1);
-        _vmgState.vmgToZoneStb.sorted.push(2, 2, 2);
+        _vmgState.vmgToCourseSide.sorted.push({value: 1, cog: 0, sog: 1}, {value: 1, cog: 0, sog: 1}, {value: 1, cog: 0, sog: 1});
+        _vmgState.vmgFromCourseSide.sorted.push({value: 2, cog: 0, sog: 2}, {value: 2, cog: 0, sog: 2}, {value: 2, cog: 0, sog: 2});
+        _vmgState.vmgToPortEnd.sorted.push({value: 1, cog: 0, sog: 1}, {value: 1, cog: 0, sog: 1}, {value: 1, cog: 0, sog: 1});
+        _vmgState.vmgToStbEnd.sorted.push({value: 2, cog: 0, sog: 2}, {value: 2, cog: 0, sog: 2}, {value: 2, cog: 0, sog: 2});
 
         expect(computeTimeToLine(toRadians(-1), 10, 270, 0, 100, false, 'stb')).toBeCloseTo(10);
         expect(computeTimeToLine(toRadians(0), 10, 270, 100, 0, false, 'stb')).toBeCloseTo(100);
@@ -62,10 +62,10 @@ describe('racer ttl', () => {
 
     test('timeToLineSmallInstant: small instant', () => {
         resetVmgSamples();
-        _vmgState.vmgToLinePos.sorted.push(10, 10, 10, 10, 10, 10, 10, 10, 10, 15);
-        _vmgState.vmgToLineNeg.sorted.push(20, 20, 20, 20, 20, 20, 20, 20, 20, 25);
-        _vmgState.vmgToZonePort.sorted.push(10, 10, 10, 10, 10, 10, 10, 10, 10, 15);
-        _vmgState.vmgToZoneStb.sorted.push(20, 20, 20, 20, 20, 20, 20, 20, 20, 25);
+        _vmgState.vmgToCourseSide.sorted.push({value: 10, cog: 0, sog: 10}, {value: 10, cog: 0, sog: 10}, {value: 10, cog: 0, sog: 10}, {value: 10, cog: 0, sog: 10}, {value: 10, cog: 0, sog: 10}, {value: 10, cog: 0, sog: 10}, {value: 10, cog: 0, sog: 10}, {value: 10, cog: 0, sog: 10}, {value: 10, cog: 0, sog: 10}, {value: 15, cog: 0, sog: 15});
+        _vmgState.vmgFromCourseSide.sorted.push({value: 20, cog: 0, sog: 20}, {value: 20, cog: 0, sog: 20}, {value: 20, cog: 0, sog: 20}, {value: 20, cog: 0, sog: 20}, {value: 20, cog: 0, sog: 20}, {value: 20, cog: 0, sog: 20}, {value: 20, cog: 0, sog: 20}, {value: 20, cog: 0, sog: 20}, {value: 20, cog: 0, sog: 20}, {value: 25, cog: 0, sog: 25});
+        _vmgState.vmgToPortEnd.sorted.push({value: 10, cog: 0, sog: 10}, {value: 10, cog: 0, sog: 10}, {value: 10, cog: 0, sog: 10}, {value: 10, cog: 0, sog: 10}, {value: 10, cog: 0, sog: 10}, {value: 10, cog: 0, sog: 10}, {value: 10, cog: 0, sog: 10}, {value: 10, cog: 0, sog: 10}, {value: 10, cog: 0, sog: 10}, {value: 15, cog: 0, sog: 15});
+        _vmgState.vmgToStbEnd.sorted.push({value: 20, cog: 0, sog: 20}, {value: 20, cog: 0, sog: 20}, {value: 20, cog: 0, sog: 20}, {value: 20, cog: 0, sog: 20}, {value: 20, cog: 0, sog: 20}, {value: 20, cog: 0, sog: 20}, {value: 20, cog: 0, sog: 20}, {value: 20, cog: 0, sog: 20}, {value: 20, cog: 0, sog: 20}, {value: 25, cog: 0, sog: 25});
 
         expect(computeTimeToLine(toRadians(-1), 1, 270, 0, 100, false, 'stb')).toBeCloseTo(10);
         expect(computeTimeToLine(toRadians(0), 1, 270, 100, 0, false, 'stb')).toBeCloseTo(10);

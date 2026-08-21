@@ -40,6 +40,68 @@
         }
       }
     },
+    "/signalk/v1/api/vessels/self/navigation/racing/swapStartLine": {
+      "put": {
+        "summary": "Swap the ends of the Start Line",
+        "description": "Exchange the port (pin) and starboard (boat) ends of the start line, reversing its bearing. Collected VMG samples and any manual adjustments are exchanged with the ends rather than discarded. Takes no parameters.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Start line ends swapped"
+          },
+          "400": {
+            "description": "No start line with both ends is currently set"
+          }
+        }
+      }
+    },
+    "/signalk/v1/api/vessels/self/navigation/racing/setBestVmg": {
+      "put": {
+        "summary": "Set, Adjust or Reset a Best VMG",
+        "description": "Override one of the best VMGs used to estimate time to line, either absolutely (`value`) or relative to its current value (`delta`), both in m/s. An override stands in for the collected percentile, but the VMG the boat is actually sailing always wins if it is better. Overrides are cleared when the start timer reaches zero, when the start line changes, and by the `reset` command.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "vmg": {
+                    "type": "string",
+                    "enum": ["toCourseSide", "fromCourseSide", "toPortEnd", "toStbEnd"],
+                    "description": "Which best VMG to set. Optional for the 'reset' command, which otherwise clears all four"
+                  },
+                  "command": {
+                    "type": "string",
+                    "enum": ["reset"],
+                    "description": "Clear the override for `vmg`, or for all four if `vmg` is omitted"
+                  },
+                  "value": { "type": "number", "description": "Absolute best VMG in m/s" },
+                  "delta": { "type": "number", "description": "Adjustment in m/s applied to the current best VMG" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Best VMG updated"
+          },
+          "400": {
+            "description": "Unknown vmg name, or neither value nor delta supplied"
+          }
+        }
+      }
+    },
     "/signalk/v1/api/vessels/self/navigation/racing/setStartTime": {
       "put": {
         "summary": "Set, Adjust or Command the Timer",

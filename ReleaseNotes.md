@@ -1,3 +1,23 @@
+## 1.2.0 Visualize line and best VMGs
+ + Added `navigation.racing.swapStartLine` to swap the port and starboard ends of the line,
+   carrying the collected VMG samples across with the ends
+ + Published the four best VMGs behind the time to line as `navigation.racing.bestVmg.`
+   `{toCourseSide,fromCourseSide,toPortEnd,toStbEnd}`, each with an `.override` beside it
+   reporting the manual adjustment, if any
+ + Added `navigation.racing.setBestVmg` to adjust or reset them, plus direct puts to each path.
+   An adjustment holds until the gun, but the VMG actually being sailed wins if it is better
+ + Samples now keep the `cog` and `sog` that produced them, published as
+   `navigation.racing.bestApproach`: the course actually sailed that best closes the line
+ + Published the start line bearing as `navigation.racing.startLineBearing`
+ + Webapp: swap-ends button, race countdown, and a start line visualisation with the best VMGs
+   as a cross below it and projections showing where the boat reaches at the gun
+ + Webapp and admin UI now show the running plugin version
+ + Fixed VMG samples being rejected below an absolute 1 m/s in each direction, so a boat closing
+   the line at an angle only fed the direction it was mostly travelling (now `minVmg`, 0.01 m/s)
+ + Fixed the collected VMG samples being discarded whenever any waypoint changed
+ + Fixed the start line bias not being cleared when the line is lost
+ + Fixed the webapp race countdown never being displayed
+
 ## 1.1.2 TTL fixes
  + use a FIFO queue for VMGs towards the line.
  + avoid undefined values in deltas
