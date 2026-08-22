@@ -129,6 +129,22 @@
     const EARTH_RADIUS = 6371000;
     const VMG_NAMES = ['toCourseSide', 'fromCourseSide', 'toPortEnd', 'toStbEnd'];
 
+    // What the two projections from the boat mean. Shown on hover rather than as a
+    // drawn legend, so the visualization stays clean.
+    const LEGEND_CURRENT = 'Current cog/sog to start';
+    const LEGEND_BEST = 'Best VMG to start';
+    const LEGEND_STUB = 'Current course over ground (no timer running)';
+
+    function formatKnots(metresPerSecond) {
+        return metresPerSecond == null ? '--' : `${(metresPerSecond / KNOTS_TO_MS).toFixed(1)}kn`;
+    }
+
+    function formatBearing(radians) {
+        if (radians == null) return '--';
+        const degrees = ((radians * 180 / Math.PI) % 360 + 360) % 360;
+        return `${degrees.toFixed(0).padStart(3, '0')}°T`;
+    }
+
     // Everything the line visualization needs, filled in from the delta stream.
     const nav = {
         port: null,
@@ -293,16 +309,21 @@
             // sailed behind the best VMG towards the line, on its own bearing, so the two
             // tips compare where you are heading with where you could be heading.
             // With no timer running only a course stub is drawn.
+            // What the two projections ended up being, so the boat's tooltip describes
+            // only the lines actually drawn.
+            let thickLabel = null;
+            let thinLabel = null;
             if (nav.cog != null) {
                 const run = nav.timerRunning && nav.timeToStart > 0;
                 const v = screenVector(nav.cog);
                 // Clamped past the far corner of the viewBox: a long countdown projects
                 // well off the drawing, and it is clipped there anyway.
                 const project = (speed) => Math.min(speed * nav.timeToStart * scale, 600);
-                const cogLine = (length, width, opacity) =>
+                const cogLine = (length, width, opacity, label) =>
                     parts.push(`<line x1="${bx.toFixed(1)}" y1="${by.toFixed(1)}"` +
                         ` x2="${(bx + v.x * length).toFixed(1)}" y2="${(by + v.y * length).toFixed(1)}"` +
-                        ` stroke="#6cf" stroke-width="${width}" stroke-opacity="${opacity}"/>`);
+                        ` stroke="#6cf" stroke-width="${width}" stroke-opacity="${opacity}">` +
+                        `<title>${label}</title></line>`);
 
                 if (run) {
                     // The thin line is a course the boat has genuinely sailed - the cog and
@@ -315,12 +336,17 @@
                         parts.push(`<line x1="${bx.toFixed(1)}" y1="${by.toFixed(1)}"` +
                             ` x2="${(bx + av.x * length).toFixed(1)}"` +
                             ` y2="${(by + av.y * length).toFixed(1)}"` +
-                            ` stroke="#6cf" stroke-width="1" stroke-opacity="0.3"/>`);
+                            ` stroke="#6cf" stroke-width="1" stroke-opacity="0.3">` +
+                            `<title>${LEGEND_BEST}</title></line>`);
+                        thinLabel = LEGEND_BEST;
                     }
-                    if (nav.sog != null)
-                        cogLine(project(nav.sog), 3, 0.55);
+                    if (nav.sog != null) {
+                        cogLine(project(nav.sog), 3, 0.55, LEGEND_CURRENT);
+                        thickLabel = LEGEND_CURRENT;
+                    }
                 } else {
-                    cogLine(40, 3, 0.55);
+                    thickLabel = LEGEND_STUB;
+                    cogLine(40, 3, 0.55, LEGEND_STUB);
                 }
             }
 
@@ -334,8 +360,14 @@
                 [bx - dx * 7 + px * 6, by - dy * 7 + py * 6],
                 [bx - dx * 7 - px * 6, by - dy * 7 - py * 6]
             ].map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
+            // Hovering the boat reports what it is doing, and says what the two lines
+            // running from it mean - they are only described here, to keep the drawing
+            // itself uncluttered.
+            const tip = [`SOG ${formatKnots(nav.sog)}  COG ${formatBearing(nav.cog)}`];
+            if (thickLabel) tip.push(`Thick line: ${thickLabel}`);
+            if (thinLabel) tip.push(`Thin line: ${thinLabel}`);
             parts.push(`<polygon points="${pts}" fill="${boat.c < 0 ? '#fc0' : '#6cf'}"` +
-                ` stroke="#fff" stroke-width="1"/>`);
+                ` stroke="#fff" stroke-width="1"><title>${tip.join('\n')}</title></polygon>`);
         }
 
         svg.innerHTML = parts.join('');

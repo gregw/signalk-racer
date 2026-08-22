@@ -135,6 +135,53 @@ If `navigation.headingTrue` is not available, then `navigation.courseOverGroundT
 
 ---
 
+## 📉 Webapp Start Line Visualization
+
+The webapp draws the line "line up": always horizontal, with the **port (pin) end to the left**
+and the **starboard (committee boat) end to the right**. The course side of the line is therefore
+always the **upper** half of the drawing and the pre-start side the lower half, so the arrow beside
+the line length and start heading always points straight up. The drawing is auto-scaled to fit the
+line and the boat, so it zooms as the boat closes. The line length and the heading to sail to cross
+the line are marked on the line itself, and the boat is drawn as a triangle pointing along its
+heading, amber when OCS.
+
+Two projections run from the boat. Both start at the boat and are drawn to the same scale as the
+rest of the drawing, so their **tips can be read directly against the line**. Hovering the boat
+reports its SOG and COG and names whichever of the two lines are currently drawn.
+
+#### Thick line — "Current cog/sog to start"
+
+Runs along the boat's present `navigation.courseOverGroundTrue`. While the start timer is counting
+down, its length is `SOG × timeToStart`: the distance the boat will cover before the gun if nothing
+changes. Its tip is therefore **where the boat will be when the start fires**:
+
+- tip short of the line — the boat is late and will cross after the gun
+- tip on the line — a perfect start
+- tip beyond the line — the boat is early and will be OCS
+
+With no timer running there is nothing to project against, so it degrades to a short fixed-length
+stub showing course only.
+
+#### Thin faint line — "Best VMG to start"
+
+Runs along `navigation.racing.bestApproach`, with its length that course's own
+`SOG × timeToStart`. This is **not** a synthetic best case: it is a course the boat has genuinely
+sailed in the last few minutes, being the `cog`/`sog` recorded against the 90th percentile VMG
+sample for the direction that actually matters (across the line, or along it when outside the start
+zone — see [Time To Line](#time-to-line-navigationracingtimetoline)). Because it is a real point of
+sail it runs on its **own bearing**, not the current one, so it will diverge from the thick line
+whenever the boat is not sailing as well as it recently has.
+
+Comparing the two tips is the point of the pair: if the thin line reaches the line and the thick one
+falls short, then sailing the boat as well as it has already been sailed would get you there, and
+the difference between the tips is what is being left on the table. If no samples have been
+collected yet, or the timer is not running, this line is not drawn.
+
+Over a long countdown both projections run well off the drawing and are simply clipped at its edge;
+the part that matters — where they cross the line — stays visible.
+
+---
+
 ## 🌐 API Access
 
 This plugin uses the following WebSocket-based PUT requests to Signal K model paths.
