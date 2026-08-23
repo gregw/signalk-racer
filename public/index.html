@@ -58,21 +58,28 @@
             gap: 0.5em;
         }
 
+        /* Five columns: the VMG arms take the middle three and stay tightly grouped,
+           while TTL and DTL sit in the outer two. Keeping the stats out of the arms'
+           columns is what stops the big numbers stretching the cross apart.
+           Everything is bottom aligned, so the TTL/DTL labels land on the same line
+           as the top arm and the large numbers rise above it. */
         .vmg-cross {
             display: grid;
-            grid-template-columns: repeat(3, auto);
-            align-items: center;
+            grid-template-columns: repeat(5, auto);
+            align-items: end;
             justify-items: center;
-            gap: 0 0.8em;
+            gap: 0 0.5em;
         }
 
         .viz { width: 100%; max-width: 400px; }
 
         .vmg-row { display: flex; align-items: center; justify-content: center; gap: 0.15em; }
 
-        /* TTL and DTL flank the top of the cross. They are bottom aligned, so the large
-           type grows upwards and the numbers rise clear above the rest of the cross. */
-        .cross-stat { align-self: end; line-height: 1; }
+        /* The label sits under its number and hugs the outer edge, so the two read
+           outwards from the cross rather than crowding its middle. */
+        .cross-stat { line-height: 1; }
+        .cross-stat-left { text-align: left; }
+        .cross-stat-right { text-align: right; }
         .cross-stat-label { font-size: 0.65em; color: #aaa; }
         .cross-stat-value { font-size: 3.6em; font-weight: bold; font-family: monospace; }
         .vmg-value { min-width: 2.2em; font-size: 1.2em; font-weight: bold; line-height: 1; }
@@ -897,20 +904,23 @@
     </div>
 
     <div class="vmg-cross">
-        <div class="cross-stat" title="Time to line at the effective VMG">
-            <div class="cross-stat-label">TTL</div>
+        <div class="cross-stat cross-stat-left" title="Time to line at the effective VMG">
             <div class="cross-stat-value" id="timeToLine">--:--</div>
+            <div class="cross-stat-label">TTL</div>
         </div>
+        <div></div>
         <div class="vmg-row" title="Best VMG across the line towards the course side">
             <button class="vmg-adjust" onclick="adjustBestVmg('toCourseSide', -0.1)">&minus;</button>
             <span class="vmg-value" id="vmg-toCourseSide">--</span>
             <button class="vmg-adjust" onclick="adjustBestVmg('toCourseSide', 0.1)">+</button>
         </div>
-        <div class="cross-stat" title="Distance from the bow to the line, negative when OCS">
-            <div class="cross-stat-label">DTL</div>
+        <div></div>
+        <div class="cross-stat cross-stat-right" title="Distance from the bow to the line, negative when OCS">
             <div class="cross-stat-value" id="distanceToLine">--</div>
+            <div class="cross-stat-label">DTL</div>
         </div>
 
+        <div></div>
         <div class="vmg-row" title="Best VMG along the line towards the port end (pin)">
             <button class="vmg-adjust" onclick="adjustBestVmg('toPortEnd', -0.1)">&minus;</button>
             <span class="vmg-value" id="vmg-toPortEnd">--</span>
@@ -922,7 +932,9 @@
             <span class="vmg-value" id="vmg-toStbEnd">--</span>
             <button class="vmg-adjust" onclick="adjustBestVmg('toStbEnd', 0.1)">+</button>
         </div>
+        <div></div>
 
+        <div></div>
         <div></div>
         <div class="vmg-row" title="Best VMG back across the line from the course side, used when OCS">
             <button class="vmg-adjust" onclick="adjustBestVmg('fromCourseSide', -0.1)">&minus;</button>
@@ -930,10 +942,11 @@
             <button class="vmg-adjust" onclick="adjustBestVmg('fromCourseSide', 0.1)">+</button>
         </div>
         <div></div>
+        <div></div>
     </div>
 </div>
 <div style="font-size: 0.8em; color: #888;">
-    Best VMG in knots &middot; <span style="color: #fc0;">adjusted</span> values revert at the start
+    Best VMG in knots
 </div>
 
 <!-- Start-line selector -->

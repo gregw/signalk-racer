@@ -40,7 +40,7 @@ There are dedicated widgets for the start timer and line adjustment since 3.5.0 
 
 ![KIP and Freeboard Screenshot](racer-kip.png)
 
-There is also a webapp to adjust the line and timer.
+There is also a webapp to: adjust the line, visualize the approach to the line, adjust VMGs and configure the timer.
 
 ![Signalk Racer Webapp](racer-webapp.png)
 
