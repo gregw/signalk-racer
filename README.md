@@ -228,14 +228,15 @@ Used to **adjust** or **reset** the best VMGs used to estimate the time to line.
   "vmg": "toCourseSide" | "fromCourseSide" | "toPortEnd" | "toStbEnd",
   "value": 5.0,
   "delta": 0.0514,
-  "command": "reset"
+  "command": "reset" | "clear"
 }
 ```
 
 - `vmg`: which best VMG to adjust. Optional for `reset`, which otherwise clears all four.
 - `value`: absolute best VMG in `m/s`.
 - `delta`: adjustment in `m/s` applied to the current best VMG.
-- `command`: `"reset"` to clear the override and revert to the collected samples.
+- `command`: `"reset"` to clear the override and revert to the collected samples, or
+  `"clear"` to throw away the collected samples themselves and start again.
 
 An absolute value may also be put directly to `navigation.racing.bestVmg.<name>`.
 

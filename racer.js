@@ -4,6 +4,10 @@
 let cfg = {
     minSog: 1.0,
     minVmg: 0.01,
+    // Floor under each effective VMG, in m/s. Without one, a boat that has collected no
+    // samples in a direction - or is drifting - reports no VMG at all and the time to
+    // line becomes meaningless. One knot is a speed almost any boat can make good.
+    minEffectiveVmg: 0.514444,
     maxDistance: 2000,
     maxSamples: 600,
     percentile: 0.9
@@ -316,7 +320,7 @@ function effectiveVmg(cog, sog, lineBearing, toZoneVz, ocs, closestEnd) {
     // line from the course side.
     const histNormal = bestVmg(ocs ? vmgState.vmgFromCourseSide : vmgState.vmgToCourseSide);
     const instNormal = ocs ? -vmgNormalSigned : vmgNormalSigned;
-    const toLine = Math.max(histNormal || 0, instNormal || 0);
+    const toLine = Math.max(histNormal || 0, instNormal || 0, cfg.minEffectiveVmg);
 
     // Along the line, towards the zone entry - and only when there is a leg to sail.
     let histParallel = 0;
@@ -332,7 +336,11 @@ function effectiveVmg(cog, sog, lineBearing, toZoneVz, ocs, closestEnd) {
             if (vmgTangentSigned > 0) instParallel = vmgTangentSigned;
         }
     }
-    const alongLine = Math.max(histParallel || 0, instParallel || 0);
+    // Floored only when there is a leg to sail: inside the zone there is none, and a
+    // floor there would invent an along-line time out of nothing.
+    const alongLine = toZoneVz > 0
+        ? Math.max(histParallel || 0, instParallel || 0, cfg.minEffectiveVmg)
+        : Math.max(histParallel || 0, instParallel || 0);
 
     return {toLine, alongLine};
 }

@@ -133,3 +133,38 @@ describe('effective vmg', () => {
         expect(ttl).toBeCloseTo(60 / e.alongLine + 100 / e.toLine, 6);
     });
 });
+
+describe('minimum effective vmg', () => {
+    const { effectiveVmg, resetVmgSamples, computeTimeToLine } = require('../racer');
+    const KNOT = 0.514444;
+
+    test('a direction with nothing collected still gets one knot', () => {
+        resetVmgSamples();
+        const e = effectiveVmg(null, null, 270, 100, false, 'stb');
+        expect(e.toLine).toBeCloseTo(KNOT, 6);
+        expect(e.alongLine).toBeCloseTo(KNOT, 6);
+    });
+
+    test('the floor never pulls a real VMG down', () => {
+        resetVmgSamples();
+        const { _vmgState } = require('../racer');
+        for (let i = 0; i < 3; i++) {
+            _vmgState.vmgToCourseSide.sorted.push({ value: 4, cog: 0, sog: 4 });
+        }
+        expect(effectiveVmg(null, null, 270, 0, false, 'stb').toLine).toBeCloseTo(4, 6);
+    });
+
+    test('no along leg means no floor on it', () => {
+        resetVmgSamples();
+        // Inside the zone there is nothing to sail along the line, so inventing a VMG
+        // there would invent a time with it.
+        expect(effectiveVmg(null, null, 270, 0, false, 'stb').alongLine).toBe(0);
+    });
+
+    test('time to line stays finite with no samples at all', () => {
+        resetVmgSamples();
+        const ttl = computeTimeToLine(null, null, 270, 0, 100, false, 'stb');
+        expect(ttl).toBeCloseTo(100 / KNOT, 3);
+        expect(Number.isFinite(ttl)).toBe(true);
+    });
+});

@@ -8,6 +8,11 @@
  + `navigation.racing.timeToBurn` is now published when OCS as well. The time to line is
    then the time to get back over the line from the course side, so the spare time before
    you have to turn and do it is just as real, and goes negative once it is too late
+ + Each effective VMG is now floored at a configurable minimum, `minEffectiveVmg`,
+   defaulting to 1 knot. A direction with nothing collected reported no VMG at all, which
+   left the time to line falling back to the time to start rather than estimating anything
+ + `navigation.racing.setBestVmg` accepts `command: "clear"`, which discards the collected
+   samples themselves rather than just the manual adjustments
  + Published the two VMGs the time to line is actually divided by as
    `navigation.racing.effectiveVmg.{toLine,alongLine}`: the collected best for each
    direction, or the VMG being sailed right now when that is better. `bestVmg.*` reports

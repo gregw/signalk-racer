@@ -63,6 +63,11 @@ module.exports = (app) => {
                 title: 'Minimum VMG component in m/s for a sample to be collected in that direction',
                 default: 0.01
             },
+            minEffectiveVmg: {
+                type: 'number',
+                title: 'Minimum effective VMG in knots used to estimate time to line',
+                default: 1.0
+            },
             maxDistance: {
                 type: 'number',
                 title: 'Maximum distance to line and/or line zone in meters to consider for VMG calculations',
@@ -759,6 +764,14 @@ module.exports = (app) => {
             if (!args)
                 return complete(callback, 400, 'Failed to set best VMG: no value');
 
+            if (args.command === 'clear') {
+                // Throw away everything collected, not just the manual adjustments, so
+                // the estimate starts again from what the boat does next.
+                resetVmgSamples();
+                publishBestVmg();
+                return complete(callback, 200, 'Cleared best VMG samples: OK');
+            }
+
             if (args.command === 'reset') {
                 // No vmg name clears every override.
                 if (!clearBestVmgOverrides(args.vmg))
@@ -1270,6 +1283,7 @@ module.exports = (app) => {
             initRacer({
                 minSog: options.minSog ?? 1.0,
                 minVmg: options.minVmg ?? 0.01,
+                minEffectiveVmg: (options.minEffectiveVmg ?? 1.0) * 0.514444,
                 maxDistance: options.maxDistance ?? 2000,
                 maxSamples: options.maxSamples ?? 600,
                 percentile: options.percentile ?? 0.9
