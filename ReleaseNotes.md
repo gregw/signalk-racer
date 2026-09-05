@@ -1,3 +1,19 @@
+## 1.2.1 Start line approach
+ + Fixed the distance to the start zone being measured against a 54.7 degree wedge while
+   the zone itself was tested at 45 degrees, so `distanceStartline` and `timeToLine`
+   jumped by 0.29 times the offset as a boat crossed the boundary. They are now continuous
+   and the along-line leg reaches zero exactly at the wedge
+ + The start zone geometry moved from `index.js` into `racer.js` as `startZoneDistances`,
+   where it is unit tested - it had no coverage at all, which is how the above survived
+ + `navigation.racing.timeToBurn` is now published when OCS as well. The time to line is
+   then the time to get back over the line from the course side, so the spare time before
+   you have to turn and do it is just as real, and goes negative once it is too late
+ + Published the two VMGs the time to line is actually divided by as
+   `navigation.racing.effectiveVmg.{toLine,alongLine}`: the collected best for each
+   direction, or the VMG being sailed right now when that is better. `bestVmg.*` reports
+   only the collected half, so a client drawing the approach from it disagreed with the
+   published time whenever the boat was going well
+
 ## 1.2.0 Visualize line and best VMGs
  + Added `navigation.racing.swapStartLine` to swap the port and starboard ends of the line,
    carrying the collected VMG samples across with the ends

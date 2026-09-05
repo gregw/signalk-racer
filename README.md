@@ -25,6 +25,8 @@ This plugin calculates and publishes the following Signal K paths:
 | `navigation.racing.bestVmg.toPortEnd`      | Best VMG along the line towards the port end (pin)                     | `m/s`                                              |     |
 | `navigation.racing.bestVmg.toStbEnd`       | Best VMG along the line towards the stb end (boat)                     | `m/s`                                              |     |
 | `navigation.racing.bestVmg.*.override`     | The manual adjustment behind each best VMG, `null` when not adjusted   | `m/s`                                              |     |
+| `navigation.racing.effectiveVmg.toLine`    | VMG the perpendicular leg of the time to line is divided by            | `m/s`                                              |     |
+| `navigation.racing.effectiveVmg.alongLine` | VMG the along-line leg is divided by, 0 when inside the start zone     | `m/s`                                              |     |
 | `navigation.racing.bestApproach`           | The course actually sailed that achieved the best VMG towards the line | `{rad,m/s}`                                        |     |
 | `navigation.racing.startLinePort`          | Location of the port (pin) end of the start line                       | `{latitude,longitude}`                             | Y   |
 | `navigation.racing.startLineStb`           | Location of the starboard (boat) end of the start line                 | `{latitude,longitude}`                             | Y   |

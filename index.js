@@ -6,6 +6,7 @@ module.exports = (app) => {
         publishedBestVmg: {toCourseSide: null, fromCourseSide: null, toPortEnd: null, toStbEnd: null},
         publishedBestVmgOverrides: {toCourseSide: null, fromCourseSide: null, toPortEnd: null, toStbEnd: null},
         publishedBestApproach: 'null',
+        publishedEffectiveVmg: {toLine: null, alongLine: null},
     };
     const geolib = require('geolib')
     const racerSchema = {
@@ -116,6 +117,8 @@ module.exports = (app) => {
         collectVmgSamples,
         resetVmgSamples,
         computeTimeToLine,
+        startZoneDistances,
+        effectiveVmg,
         vmgNames,
         getAllBestVmg,
         getBestVmgOverrides,
@@ -161,6 +164,26 @@ module.exports = (app) => {
                             "description": "The course actually sailed that achieved the best VMG towards the line: {cog in rad, sog in m/s, direction}",
                             "displayName": "Best approach course",
                             "shortName": "Approach"
+                        }
+                    },
+                    {
+                        "path": "navigation.racing.effectiveVmg.toLine",
+                        "value": {
+                            "type": "number",
+                            "units": "m/s",
+                            "description": "VMG the perpendicular leg of the time to line was divided by: the collected best across the line, or the VMG being sailed right now if that is better",
+                            "displayName": "Effective VMG to line",
+                            "shortName": "VMG>Line"
+                        }
+                    },
+                    {
+                        "path": "navigation.racing.effectiveVmg.alongLine",
+                        "value": {
+                            "type": "number",
+                            "units": "m/s",
+                            "description": "VMG the along-line leg of the time to line was divided by, zero when inside the start zone",
+                            "displayName": "Effective VMG along line",
+                            "shortName": "VMG>Zone"
                         }
                     },
                     {
@@ -341,6 +364,22 @@ module.exports = (app) => {
             if (state.publishedBestVmgOverrides[name] !== override) {
                 state.publishedBestVmgOverrides[name] = override;
                 deltas.push({path: `navigation.racing.bestVmg.${name}.override`, value: override});
+            }
+        }
+
+        // The two VMGs the time to line was actually divided by. These are what a client
+        // needs to draw the legs the estimate was built from; the collected bests above
+        // are only half the story, since the boat sailing better than its history right
+        // now wins. Only published once there is a position to resolve them against.
+        if (position.lineBearing != null) {
+            const effective = effectiveVmg(position.cog, position.sog, position.lineBearing,
+                position.toZoneVz, position.ocs, position.closestEnd);
+            for (const leg of ['toLine', 'alongLine']) {
+                const value = state.startLine ? Math.round(effective[leg] * 1000) / 1000 : null;
+                if (state.publishedEffectiveVmg[leg] !== value) {
+                    state.publishedEffectiveVmg[leg] = value;
+                    deltas.push({path: `navigation.racing.effectiveVmg.${leg}`, value});
+                }
             }
         }
 
@@ -1036,12 +1075,11 @@ module.exports = (app) => {
                 angle = 180 - (bearingToEnd - startLine.bearing);
             }
             angle = ((angle + 180) % 360 + 360) % 360 - 180;
-            const ocs = angle < 0;
 
-            // We define a start zone which includes a 45° wedge off each end of the line.
-            // - If the boat is inside the start zone, distanceToLine = perpendicular to line (or extension).
-            // - If the boat is outside the start zone, distanceToLine = distance parallel to the line to enter the zone +
-            //   perpendicular distance to the line (or extension).
+            // The start zone is a 45 degree wedge off each end of the line.
+            // - Inside the zone, distanceToLine = perpendicular to the line (or extension).
+            // - Outside it, distanceToLine = distance parallel to the line out to the
+            //   wedge, plus that perpendicular distance: an L whose corner sits on the 45.
             // This is illustrated for the starboard closest end of the line below:
             //     \                                     /
             //      \                                   /
@@ -1053,24 +1091,10 @@ module.exports = (app) => {
             //  /                                           \
             //
             // P=pin; B=boat; x=extension; b=perpToBoat; z=zoneEntry; V=vessel; N=north
-            // bearing = NBP
-            // PBz == 135
-            // bBz == zBx == 45
-            // Bb == bz == Vx == perpendicular distance to the line or extension.
-            // PBV = abs(angle)
-            // VBx = 180 - PBV
-            // Vx = toEnd * sin (VBx)
-            // bBV = 90 - VBx
-            // Vb = toEnd * sin (bBV)
-            // zb = sqrt((Vx * Vx) / 2)
-            // Vz = Vb - zb
-            const anglePBV = Math.abs(angle);
-            const inStartZone = anglePBV <= 135;
-            const angleVBx = 180 - anglePBV;
-            const perpToLineVx = toEnd * Math.sin(toRadians(angleVBx));
-            let toZoneVz = inStartZone ? 0 : ( toEnd * Math.sin(toRadians(90 - angleVBx)) - Math.sqrt(perpToLineVx * perpToLineVx / 2.0));
-            const toLine = Math.round( 10 * (toZoneVz + perpToLineVx)) / 10;
-            const distanceToLine = ocs ? -toLine : toLine;
+            // bearing = NBP, PBz == 135, bBz == zBx == 45, Bb == bz == Vx == perpendicular
+            // distance to the line or extension, PBV = abs(angle), VBx = 180 - PBV.
+            // The geometry itself lives in racer.js so it can be unit tested.
+            const {ocs, perpToLineVx, toZoneVz, distanceToLine} = startZoneDistances(toEnd, angle);
             app.debug('distanceToLine:' + distanceToLine);
             state.distanceToLine = distanceToLine;
 
@@ -1081,14 +1105,18 @@ module.exports = (app) => {
                 collectVmgSamples(cog, sog, startLine.bearing, toZoneVz, perpToLineVx);
             }
             const ttl = computeTimeToLine(cog, sog, startLine.bearing, toZoneVz, perpToLineVx, ocs, closestEnd, state.timeToStart ?? 0);
-            const ttb = !ocs && state.timerRunning && state.timeToStart > 0 && ttl != null ? (state.timeToStart - ttl) : null;
+            // Time to burn stands when OCS too: the time to line is then the time to get
+            // back over the line from the course side, so the spare time before you have
+            // to turn and do it is just as real - and goes negative when you have left it
+            // too late, which is exactly when it is worth reading.
+            const ttb = state.timerRunning && state.timeToStart > 0 && ttl != null ? (state.timeToStart - ttl) : null;
 
             sendDeltas([
                 {path: 'navigation.racing.distanceStartline', value: distanceToLine},
                 {path: "navigation.racing.timeToLine", value: ttl},
                 {path: "navigation.racing.timeToBurn", value: ttb}
             ]);
-            publishBestVmg({ocs, toZoneVz, closestEnd});
+            publishBestVmg({ocs, toZoneVz, closestEnd, cog, sog, lineBearing: startLine.bearing});
 
         } else if (state.distanceToLine) {
             state.distanceToLine = null;

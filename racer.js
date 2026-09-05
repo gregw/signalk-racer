@@ -239,69 +239,125 @@ function insertSample(vmg, value, cog, sog) {
     vmg.queue.push(sample);
 }
 
-function computeTimeToLine(cog, sog, lineBearing, toZoneVz, perpToLineVx, ocs, closestEnd, timeToStart = 0) {
+/**
+ * Resolve a boat's position relative to the start line into the two distances the time
+ * to line is built from.
+ *
+ * The start zone is a 45 degree wedge off each end of the line. Inside it the line can be
+ * laid, so the only distance that counts is the perpendicular one. Outside it the boat
+ * must first run parallel to the line until it reaches the wedge, and from that corner
+ * the 45 degree approach makes good the remaining along-line distance at the same time as
+ * the perpendicular one - so the along leg is charged only as far as the wedge, and the
+ * two legs together form an L whose corner sits on the 45.
+ *
+ * The L is a distance to be made good, not the track a boat sails.
+ *
+ * @param {number} toEnd Distance from the boat to the closest end of the line, in metres.
+ * @param {number} angle Signed angle at that end, in degrees, between the line (towards
+ *   the other end) and the boat. Negative when the boat is on the course side (OCS).
+ * @returns {{ocs: boolean, inStartZone: boolean, perpToLineVx: number, toZoneVz: number,
+ *   toLine: number, distanceToLine: number}}
+ */
+function startZoneDistances(toEnd, angle) {
+    const anglePBV = Math.abs(angle);
+    const ocs = angle < 0;
+    const inStartZone = anglePBV <= 135;
+    const angleVBx = 180 - anglePBV;
+
+    // Perpendicular distance to the line, or to its extension past the end.
+    const perpToLineVx = toEnd * Math.sin(toRadians(angleVBx));
+    // Distance parallel to the line from the boat out to the wedge. The wedge is at 45
+    // degrees, so at the boat's own perpendicular offset it stands exactly that offset
+    // beyond the end: the along distance to reach it is the overshoot less the offset.
+    // This reaches zero exactly at anglePBV == 135, so the pair is continuous across the
+    // zone boundary.
+    const overshoot = toEnd * Math.sin(toRadians(90 - angleVBx));
+    const toZoneVz = inStartZone ? 0 : Math.max(0, overshoot - perpToLineVx);
+
+    // The length of the L, which is what the visualisation draws.
+    const toLine = Math.round(10 * (toZoneVz + perpToLineVx)) / 10;
+    return {
+        ocs,
+        inStartZone,
+        perpToLineVx,
+        toZoneVz,
+        toLine,
+        distanceToLine: ocs ? -toLine : toLine
+    };
+}
+
+/**
+ * The two VMGs the time to line is actually divided by: the collected best for each
+ * direction, or whatever the boat is achieving right now if that is better.
+ *
+ * An adjustment or a collected sample stands in for what the boat can do, but the boat
+ * beating that estimate right now is hard evidence, so the instantaneous value wins when
+ * it is larger. Published as `navigation.racing.effectiveVmg.*` so a client can show the
+ * same legs the time to line was built from without re-deriving this.
+ *
+ * @returns {{toLine: number, alongLine: number}} Both in m/s. `alongLine` is 0 when the
+ *   boat is inside the start zone, there being no along-line leg to sail.
+ */
+function effectiveVmg(cog, sog, lineBearing, toZoneVz, ocs, closestEnd) {
     let vmgNormalSigned = 0;
     let vmgTangentSigned = 0;
 
     if (cog != null && sog != null) {
         const lineBearingRad = toRadians(lineBearing);
-        if (lineBearingRad === null) {
-            return 0;
+        if (lineBearingRad !== null) {
+            // Angle between boat COG and line bearing.
+            const angleRad = cog - lineBearingRad;
+            vmgNormalSigned = sog * Math.sin(angleRad);  // normal to the line
+            vmgTangentSigned = sog * Math.cos(angleRad); // along it (stb->port is +)
         }
-
-        // Angle between boat COG and line bearing
-        const angleRad = cog - lineBearingRad;
-
-        // Signed VMG components from *current* COG/SOG
-        vmgNormalSigned = sog * Math.sin(angleRad); // normal to line
-        vmgTangentSigned = sog * Math.cos(angleRad); // along line (stb->port is +)
     }
 
-    // 1. Effective VMG normal (perpendicular to line)
-    //
-    // History (or override):
-    //  - if OCS, use vmgFromCourseSide (away from line => back towards line in this case)
-    //  - otherwise, use vmgToCourseSide
+    // Across the line. If OCS the required direction is the opposite one: back over the
+    // line from the course side.
     const histNormal = bestVmg(ocs ? vmgState.vmgFromCourseSide : vmgState.vmgToCourseSide);
+    const instNormal = ocs ? -vmgNormalSigned : vmgNormalSigned;
+    const toLine = Math.max(histNormal || 0, instNormal || 0);
 
-    // Instantaneous VMG in the *required* direction
-    // if we are OCS, then the required direction is the opposite of the effective direction
-    let vmgInstNormal = ocs ? -vmgNormalSigned : vmgNormalSigned;
-    const vmgEffNormal = Math.max(histNormal || 0, vmgInstNormal || 0);
-
-    // 2. Effective VMG along the line (towards the chosen zone entry)
-    let vmgHistParallel = 0;
-    let vmgInstParallel = 0;
-
+    // Along the line, towards the zone entry - and only when there is a leg to sail.
+    let histParallel = 0;
+    let instParallel = 0;
     if (toZoneVz > 0) {
         if (closestEnd === 'port') {
-            // Coming from the pin end, we will sail from PORT towards STB
-            // => use STB-direction samples.
-            vmgHistParallel = bestVmg(vmgState.vmgToStbEnd);
-            if (vmgTangentSigned < 0) {
-                vmgInstParallel = -vmgTangentSigned; // towards stb
-            }
+            // Coming from the pin end, we sail from PORT towards STB.
+            histParallel = bestVmg(vmgState.vmgToStbEnd);
+            if (vmgTangentSigned < 0) instParallel = -vmgTangentSigned;
         } else {
-            // Coming from the boat end, we will sail from STB towards PORT
-            // => use PORT-direction samples.
-            vmgHistParallel = bestVmg(vmgState.vmgToPortEnd);
-            if (vmgTangentSigned > 0) {
-                vmgInstParallel = vmgTangentSigned; // towards port
-            }
+            // Coming from the boat end, we sail from STB towards PORT.
+            histParallel = bestVmg(vmgState.vmgToPortEnd);
+            if (vmgTangentSigned > 0) instParallel = vmgTangentSigned;
         }
     }
+    const alongLine = Math.max(histParallel || 0, instParallel || 0);
 
-    const vmgEffectParallel = Math.max(vmgHistParallel || 0, vmgInstParallel || 0);
+    return {toLine, alongLine};
+}
 
-    // 3. Combine legs: along to zone, then perpendicular to line
+/**
+ * Time to reach the start line, over the L that startZoneDistances resolves: the along
+ * leg out to the 45 degree wedge, then the perpendicular one, each at its own effective
+ * VMG.
+ */
+function computeTimeToLine(cog, sog, lineBearing, toZoneVz, perpToLineVx, ocs, closestEnd, timeToStart = 0) {
+    if (cog != null && sog != null && toRadians(lineBearing) === null) {
+        return 0;
+    }
+
+    const {toLine: vmgEffNormal, alongLine: vmgEffectParallel} =
+        effectiveVmg(cog, sog, lineBearing, toZoneVz, ocs, closestEnd);
+
     let ttl = 0;
 
-    // Outside the start zone: first go along the line (or zone boundary)
+    // Outside the start zone: first go along the line out to the wedge.
     if (toZoneVz > 0 && vmgEffectParallel > 0) {
         ttl += toZoneVz / vmgEffectParallel;
     }
 
-    // Then go perpendicular to the line to actually hit it
+    // Then across to the line itself.
     if (perpToLineVx > 0 && vmgEffNormal > 0) {
         ttl += perpToLineVx / vmgEffNormal;
     }
@@ -317,6 +373,8 @@ module.exports = {
     resetVmgSamples,
     collectVmgSamples,
     computeTimeToLine,
+    startZoneDistances,
+    effectiveVmg,
     vmgNames,
     getBestVmg,
     getAllBestVmg,
