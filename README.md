@@ -27,7 +27,6 @@ This plugin calculates and publishes the following Signal K paths:
 | `navigation.racing.bestVmg.*.override`     | The manual adjustment behind each best VMG, `null` when not adjusted   | `m/s`                                              |     |
 | `navigation.racing.effectiveVmg.toLine`    | VMG the perpendicular leg of the time to line is divided by            | `m/s`                                              |     |
 | `navigation.racing.effectiveVmg.alongLine` | VMG the along-line leg is divided by, 0 when inside the start zone     | `m/s`                                              |     |
-| `navigation.racing.bestApproach`           | The course actually sailed that achieved the best VMG towards the line | `{rad,m/s}`                                        |     |
 | `navigation.racing.startLinePort`          | Location of the port (pin) end of the start line                       | `{latitude,longitude}`                             | Y   |
 | `navigation.racing.startLineStb`           | Location of the starboard (boat) end of the start line                 | `{latitude,longitude}`                             | Y   |
 | `navigation.racing.nextLegHeading`         | True heading for the next leg of the course                            | `rad`                                              |     |
@@ -107,15 +106,6 @@ If `navigation.headingTrue` is not available, then `navigation.courseOverGroundT
  - A boat within the start zone has the time calculated by the perpendicular distance to the line divided by their effective VMG to the line.
  - A boat outside the start zone also has the perpendicular time plus the time calculated by the parallel distance to the zone divided by their effective VMG in that direction.
  - If the line is changed, then the samples used to calculate the effective VMGs are cleared.
- - Every sample keeps the `cog` and `sog` that produced it, so the course behind the 90th
-   percentile VMG towards the line can be recovered and is published as
-   `navigation.racing.bestApproach`. The direction is chosen exactly as the time to line
-   chooses its legs, and is reported alongside the course:
-     - Inside the start zone the line is closed across it, so `toCourseSide` is used, or
-       `fromCourseSide` when OCS.
-     - Outside the start zone the boat must first run along the line, so the along-line
-       samples are used, in the direction *away* from the closest end: beyond the pin it
-       must travel towards the starboard end, so `toStbEnd` governs, and vice versa.
  - The four collected VMGs are published under `navigation.racing.bestVmg.*` and may be manually
    adjusted. An adjustment stands in for the 90th percentile of the samples, but the VMG the boat
    is actually sailing still wins if it is better, so an adjustment can never make the estimate
@@ -152,11 +142,11 @@ line and the boat, so it zooms as the boat closes. The line length and the headi
 the line are marked on the line itself, and the boat is drawn as a triangle pointing along its
 heading, amber when OCS.
 
-Two projections run from the boat. Both start at the boat and are drawn to the same scale as the
-rest of the drawing, so their **tips can be read directly against the line**. Hovering the boat
-reports its SOG and COG and names whichever of the two lines are currently drawn.
+A projection runs from the boat, drawn to the same scale as the rest of the drawing, so its **tip
+can be read directly against the line**. Hovering the boat reports its SOG and COG and names the
+line running from it.
 
-#### Thick line — "Current cog/sog to start"
+#### Course projection — "Current cog/sog to start"
 
 Runs along the boat's present `navigation.courseOverGroundTrue`. While the start timer is counting
 down, its length is `SOG × timeToStart`: the distance the boat will cover before the gun if nothing
@@ -168,24 +158,6 @@ changes. Its tip is therefore **where the boat will be when the start fires**:
 
 With no timer running there is nothing to project against, so it degrades to a short fixed-length
 stub showing course only.
-
-#### Thin faint line — "Best VMG to start"
-
-Runs along `navigation.racing.bestApproach`, with its length that course's own
-`SOG × timeToStart`. This is **not** a synthetic best case: it is a course the boat has genuinely
-sailed in the last few minutes, being the `cog`/`sog` recorded against the 90th percentile VMG
-sample for the direction that actually matters (across the line, or along it when outside the start
-zone — see [Time To Line](#time-to-line-navigationracingtimetoline)). Because it is a real point of
-sail it runs on its **own bearing**, not the current one, so it will diverge from the thick line
-whenever the boat is not sailing as well as it recently has.
-
-Comparing the two tips is the point of the pair: if the thin line reaches the line and the thick one
-falls short, then sailing the boat as well as it has already been sailed would get you there, and
-the difference between the tips is what is being left on the table. If no samples have been
-collected yet, or the timer is not running, this line is not drawn.
-
-Over a long countdown both projections run well off the drawing and are simply clipped at its edge;
-the part that matters — where they cross the line — stays visible.
 
 ---
 

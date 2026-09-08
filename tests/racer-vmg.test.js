@@ -7,7 +7,6 @@ const {
     initRacer,
     collectVmgSamples,
     resetVmgSamples,
-    getBestApproach,
     _vmgState
 } = require('../racer');
 
@@ -196,82 +195,31 @@ describe('racer vmg', () => {
         expect(_vmgState.vmgToStbEnd.sorted.length).toBe(0);
     });
 
-    test('getBestApproach: recovers the course that achieved the percentile VMG', () => {
-        resetVmgSamples();
-        // Three distinct courses onto an east-west line, chosen so each yields a
-        // different VMG and every sample is identifiable by its cog and sog.
-        collectVmgSamples(toRadians(0), 4, 270, 0, 0);   // square on  => vmg 4.0
-        collectVmgSamples(toRadians(30), 6, 270, 0, 0);  // 60 off     => vmg 5.196
-        collectVmgSamples(toRadians(60), 10, 270, 0, 0); // 30 off     => vmg 5.0
-
-        // Percentile 0.9 of three samples is index floor(0.9 * 2) = 1, the middle
-        // value 5.0, which came from the fast but wide course - not the best VMG,
-        // and not the fastest boat speed, so only the stored pair can produce it.
-        const approach = getBestApproach(false);
-        expect(approach.vmg).toBeCloseTo(5.0);
-        expect(approach.sog).toBeCloseTo(10);
-        expect(approach.cog).toBeCloseTo(toRadians(60));
-
-        // When OCS the fromCourseSide samples are used instead.
-        collectVmgSamples(toRadians(180), 4, 270, 0, 0);
-        const ocsApproach = getBestApproach(true);
-        expect(ocsApproach.sog).toBeCloseTo(4);
-        expect(ocsApproach.cog).toBeCloseTo(toRadians(180));
-    });
-
-    test('getBestApproach: reports nothing when there are no samples', () => {
-        resetVmgSamples();
-        expect(getBestApproach(false)).toBeNull();
-        expect(getBestApproach(true)).toBeNull();
-    });
-
     test('insertSample: eviction keeps sorted and queue holding the same samples', () => {
         initRacer({maxSamples: 3});
         resetVmgSamples();
 
-        // Four samples of identical VMG but different courses: eviction must drop the
-        // oldest sample itself, not merely some sample of equal value.
+        // Four samples of identical VMG - the same angle off four different line
+        // bearings - so nothing but object identity tells them apart. Eviction must drop
+        // the oldest sample itself, not merely some sample of equal value, or the sorted
+        // array keeps one the queue has already let go.
         collectVmgSamples(toRadians(10), 5, 280, 0, 0);
+        const vmg = _vmgState.vmgToCourseSide;
+        const oldest = vmg.queue[0];
         collectVmgSamples(toRadians(20), 5, 290, 0, 0);
         collectVmgSamples(toRadians(30), 5, 300, 0, 0);
         collectVmgSamples(toRadians(40), 5, 310, 0, 0);
 
-        const vmg = _vmgState.vmgToCourseSide;
         expect(vmg.queue.length).toBe(3);
         expect(vmg.sorted.length).toBe(3);
-        // Same objects in both, so no stale course can survive in the sorted array.
-        const byCog = (a, b) => a.cog - b.cog;
-        expect([...vmg.sorted].sort(byCog)).toEqual([...vmg.queue].sort(byCog));
-        expect(vmg.sorted.every(s => vmg.queue.includes(s))).toBe(true);
-        // The first course sailed is the one that aged out.
-        expect(vmg.queue.map(s => Math.round(s.cog * 180 / Math.PI))).toEqual([20, 30, 40]);
+        // The first sample in is the one that aged out, gone from both arrays.
+        expect(vmg.queue).not.toContain(oldest);
+        expect(vmg.sorted).not.toContain(oldest);
+        // And the two hold the very same objects, in whatever order.
+        expect(vmg.sorted.every(sample => vmg.queue.includes(sample))).toBe(true);
+        expect(vmg.queue.every(sample => vmg.sorted.includes(sample))).toBe(true);
 
         initRacer({maxSamples: 600});
     });
 
-    test('getBestApproach: outside the start zone the along-line samples govern', () => {
-        resetVmgSamples();
-        // An east-west line (bearing 270, stb -> port). Build one clearly identifiable
-        // sample in each of the four directions.
-        collectVmgSamples(toRadians(0), 4, 270, 0, 0);    // square on   => toCourseSide
-        collectVmgSamples(toRadians(180), 5, 270, 0, 0);  // square back => fromCourseSide
-        collectVmgSamples(toRadians(270), 6, 270, 0, 0);  // along west  => toPortEnd
-        collectVmgSamples(toRadians(90), 7, 270, 0, 0);   // along east  => toStbEnd
-
-        // Inside the zone (toZoneVz 0) the across-line samples are used.
-        expect(getBestApproach(false, 0, 'port').direction).toBe('toCourseSide');
-        expect(getBestApproach(false, 0, 'port').sog).toBeCloseTo(4);
-        expect(getBestApproach(true, 0, 'port').direction).toBe('fromCourseSide');
-        expect(getBestApproach(true, 0, 'port').sog).toBeCloseTo(5);
-
-        // Outside the zone the boat must run along the line first, in the direction
-        // away from the end it is beyond: past the pin (port) it sails towards stb.
-        expect(getBestApproach(false, 100, 'port').direction).toBe('toStbEnd');
-        expect(getBestApproach(false, 100, 'port').sog).toBeCloseTo(7);
-        expect(getBestApproach(false, 100, 'stb').direction).toBe('toPortEnd');
-        expect(getBestApproach(false, 100, 'stb').sog).toBeCloseTo(6);
-
-        // Being OCS does not change the along-line choice.
-        expect(getBestApproach(true, 100, 'port').direction).toBe('toStbEnd');
-    });
 });

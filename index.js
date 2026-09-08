@@ -5,7 +5,6 @@ module.exports = (app) => {
         // Last published best VMGs, so we only send deltas when they actually change.
         publishedBestVmg: {toCourseSide: null, fromCourseSide: null, toPortEnd: null, toStbEnd: null},
         publishedBestVmgOverrides: {toCourseSide: null, fromCourseSide: null, toPortEnd: null, toStbEnd: null},
-        publishedBestApproach: 'null',
         publishedEffectiveVmg: {toLine: null, alongLine: null},
     };
     const geolib = require('geolib')
@@ -130,7 +129,6 @@ module.exports = (app) => {
         setBestVmg,
         clearBestVmgOverrides,
         swapVmgEnds,
-        getBestApproach
     } = require('./racer');
 
     const unsubscribes = [];
@@ -160,15 +158,6 @@ module.exports = (app) => {
                             "description": "Bearing of the start line, from the starboard end (boat) to the port end (pin)",
                             "displayName": "Start line bearing",
                             "shortName": "SLB"
-                        }
-                    },
-                    {
-                        "path": "navigation.racing.bestApproach",
-                        "value": {
-                            "type": "object",
-                            "description": "The course actually sailed that achieved the best VMG towards the line: {cog in rad, sog in m/s, direction}",
-                            "displayName": "Best approach course",
-                            "shortName": "Approach"
                         }
                     },
                     {
@@ -350,9 +339,6 @@ module.exports = (app) => {
     function publishBestVmg(position = {}) {
         const best = state.startLine ? getAllBestVmg() : null;
         const overrides = state.startLine ? getBestVmgOverrides() : null;
-        const approach = state.startLine
-            ? getBestApproach(position.ocs, position.toZoneVz, position.closestEnd)
-            : null;
         const deltas = [];
 
         for (const name of Object.keys(vmgNames)) {
@@ -386,19 +372,6 @@ module.exports = (app) => {
                     deltas.push({path: `navigation.racing.effectiveVmg.${leg}`, value});
                 }
             }
-        }
-
-        // The actual course behind the best VMG towards the line, rounded so a sample
-        // change rather than float noise is what triggers a delta.
-        const rounded = approach ? {
-            cog: Math.round(approach.cog * 10000) / 10000,
-            sog: Math.round(approach.sog * 1000) / 1000,
-            direction: approach.direction
-        } : null;
-        const approachJson = JSON.stringify(rounded);
-        if (state.publishedBestApproach !== approachJson) {
-            state.publishedBestApproach = approachJson;
-            deltas.push({path: 'navigation.racing.bestApproach', value: rounded});
         }
 
         if (deltas.length > 0)

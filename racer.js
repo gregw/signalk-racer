@@ -67,8 +67,7 @@ function toRadians(deg) {
     return deg * (Math.PI / 180);
 }
 
-// The sample at the given percentile: {value, cog, sog}, carrying the course that
-// actually achieved that VMG.
+// The sample at the given percentile.
 function percentileSample(vmg, p) {
     if (!vmg.sorted.length) return null;
     const idx = Math.floor(p * (vmg.sorted.length - 1));
@@ -170,37 +169,13 @@ function collectVmgSamples(cog, sog, lineBearing, toZoneVz, perpToLineVx) {
     const vmgNormal = sog * Math.sin(angleRad);  // +ve = towards the course side, -ve = away from it
     const vmgTangent = sog * Math.cos(angleRad); // +ve = towards the port end, -ve = towards the stb end
 
-    // Insert vmg arrays, each sample carrying the course that produced it so the
-    // actual cog/sog behind a best VMG can be recovered later.
-    insertSample(vmgState.vmgToCourseSide, vmgNormal, cog, sog);
-    insertSample(vmgState.vmgFromCourseSide, -vmgNormal, cog, sog);
-    insertSample(vmgState.vmgToPortEnd, vmgTangent, cog, sog);
-    insertSample(vmgState.vmgToStbEnd, -vmgTangent, cog, sog);
+    insertSample(vmgState.vmgToCourseSide, vmgNormal);
+    insertSample(vmgState.vmgFromCourseSide, -vmgNormal);
+    insertSample(vmgState.vmgToPortEnd, vmgTangent);
+    insertSample(vmgState.vmgToStbEnd, -vmgTangent);
 }
 
-// The course that achieved the best VMG towards the line: the cog/sog attached to the
-// percentile sample. The direction is chosen exactly as computeTimeToLine chooses its
-// legs, so the course shown is the one the time to line is actually built on.
-function getBestApproach(ocs, toZoneVz = 0, closestEnd = null) {
-    let direction;
-    if (toZoneVz > 0 && closestEnd) {
-        // Outside the start zone - beyond the 45 degree wedge off an end - the boat must
-        // first run along the line to reach it, so the along-line samples govern. Note
-        // the direction is away from the closest end: past the pin the boat is beyond the
-        // port end and has to travel towards the stb end to get back to the line.
-        direction = closestEnd === 'port' ? 'toStbEnd' : 'toPortEnd';
-    } else {
-        // Inside the zone the line is closed across, and when OCS that is from the
-        // course side back towards the pre-start side.
-        direction = ocs ? 'fromCourseSide' : 'toCourseSide';
-    }
-
-    const sample = percentileSample(vmgState[vmgNames[direction]], cfg.percentile);
-    if (!sample) return null;
-    return {cog: sample.cog, sog: sample.sog, vmg: sample.value, direction};
-}
-
-function insertSample(vmg, value, cog, sog) {
+function insertSample(vmg, value) {
     // Reject only samples that make no progress in this direction. Every sample is
     // decomposed into a normal and a tangential component, so a boat approaching the
     // line diagonally contributes to two VMGs; an absolute floor here would discard
@@ -210,7 +185,7 @@ function insertSample(vmg, value, cog, sog) {
     if (value <= cfg.minVmg)
         return;
 
-    const sample = {value, cog, sog};
+    const sample = {value};
 
     if (vmg.queue.length >= cfg.maxSamples) {
         const oldest = vmg.queue.shift(); // evict oldest from FIFO
@@ -223,8 +198,8 @@ function insertSample(vmg, value, cog, sog) {
             else
                 hi = mid;
         }
-        // Walk that run to the sample itself: equal VMGs may carry different courses,
-        // so sorted and queue must keep hold of the very same objects.
+        // Walk that run to the sample itself: sorted and queue must keep hold of the
+        // very same objects, equal values being indistinguishable otherwise.
         while (lo < vmg.sorted.length && vmg.sorted[lo] !== oldest)
             lo++;
         if (lo < vmg.sorted.length)
@@ -390,7 +365,6 @@ module.exports = {
     setBestVmg,
     clearBestVmgOverrides,
     swapVmgEnds,
-    getBestApproach,
 
     _percentile: percentile, // for testing purposes only
     _vmgState: vmgState // for testing purposes only

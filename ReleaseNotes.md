@@ -8,6 +8,11 @@
  + `navigation.racing.timeToBurn` is now published when OCS as well. The time to line is
    then the time to get back over the line from the course side, so the spare time before
    you have to turn and do it is just as real, and goes negative once it is too late
+ + Removed `navigation.racing.bestApproach` and the `cog`/`sog` each VMG sample carried
+   to produce it. It described one course the boat had genuinely sailed, which was useful
+   but not the path the time to line is computed over, so it read as a second answer to a
+   question that already had one. Best VMG angles will be revisited once the polar plugin
+   offers an API for them, by which point the shape is likely to be quite different
  + Each effective VMG is now floored at a configurable minimum, `minEffectiveVmg`,
    defaulting to 0.5 knots. A direction with nothing collected reported no VMG at all, which
    left the time to line falling back to the time to start rather than estimating anything
