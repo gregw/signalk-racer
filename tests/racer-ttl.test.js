@@ -14,10 +14,10 @@ describe('racer ttl', () => {
     test('timeToLineNoVMG: no VMG', () => {
         resetVmgSamples();
         expect(computeTimeToLine(toRadians(0), 10, 270, 0, 100, false, 'stb')).toBeCloseTo(10);
-        // With no samples the along leg falls back to the minimum effective VMG (1kn),
-        // so it still yields a time rather than nothing: 100m at 0.514 m/s.
+        // With no samples the along leg falls back to the minimum effective VMG (0.5kn),
+        // so it still yields a time rather than nothing: 100m at 0.257 m/s.
         expect(computeTimeToLine(toRadians(0), 10, 270, 100, 0, false, 'stb', 300))
-            .toBeCloseTo(100 / 0.514444, 3);
+            .toBeCloseTo(100 / 0.257222, 3);
         // Only with no distance at all is there nothing to compute, and the supplied
         // timeToStart stands in.
         expect(computeTimeToLine(toRadians(0), 10, 270, 0, 0, false, 'stb', 300)).toBe(300);

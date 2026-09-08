@@ -135,14 +135,28 @@ describe('effective vmg', () => {
 });
 
 describe('minimum effective vmg', () => {
-    const { effectiveVmg, resetVmgSamples, computeTimeToLine } = require('../racer');
+    const { effectiveVmg, resetVmgSamples, computeTimeToLine, initRacer } = require('../racer');
     const KNOT = 0.514444;
+    // The configured default: half a knot.
+    const MIN = 0.5 * KNOT;
 
-    test('a direction with nothing collected still gets one knot', () => {
+    test('a direction with nothing collected still gets the minimum', () => {
         resetVmgSamples();
         const e = effectiveVmg(null, null, 270, 100, false, 'stb');
-        expect(e.toLine).toBeCloseTo(KNOT, 6);
-        expect(e.alongLine).toBeCloseTo(KNOT, 6);
+        expect(e.toLine).toBeCloseTo(MIN, 6);
+        expect(e.alongLine).toBeCloseTo(MIN, 6);
+    });
+
+    test('the minimum is configurable', () => {
+        resetVmgSamples();
+        initRacer({minEffectiveVmg: 2 * KNOT});
+        try {
+            const e = effectiveVmg(null, null, 270, 100, false, 'stb');
+            expect(e.toLine).toBeCloseTo(2 * KNOT, 6);
+            expect(e.alongLine).toBeCloseTo(2 * KNOT, 6);
+        } finally {
+            initRacer({minEffectiveVmg: MIN});
+        }
     });
 
     test('the floor never pulls a real VMG down', () => {
@@ -164,7 +178,7 @@ describe('minimum effective vmg', () => {
     test('time to line stays finite with no samples at all', () => {
         resetVmgSamples();
         const ttl = computeTimeToLine(null, null, 270, 0, 100, false, 'stb');
-        expect(ttl).toBeCloseTo(100 / KNOT, 3);
+        expect(ttl).toBeCloseTo(100 / MIN, 3);
         expect(Number.isFinite(ttl)).toBe(true);
     });
 });

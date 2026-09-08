@@ -6,8 +6,8 @@ let cfg = {
     minVmg: 0.01,
     // Floor under each effective VMG, in m/s. Without one, a boat that has collected no
     // samples in a direction - or is drifting - reports no VMG at all and the time to
-    // line becomes meaningless. One knot is a speed almost any boat can make good.
-    minEffectiveVmg: 0.514444,
+    // line becomes meaningless. Half a knot is a speed almost any boat can make good.
+    minEffectiveVmg: 0.257222,
     maxDistance: 2000,
     maxSamples: 600,
     percentile: 0.9

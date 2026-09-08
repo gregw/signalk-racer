@@ -62,6 +62,7 @@ You can configure the plugin via the Signal K web interface or by editing `setti
 | `period`                  | How often to update values (in milliseconds)                            | `1000`        |
 | `updateStartLineWaypoint` | Should the waypoints be updated if the line is set/adjusted             | `true`        |
 | `createStartLineWaypoint` | Should the waypoints be created if the line is set                      | `true`        |
+| `minEffectiveVmg`         | Floor under each effective VMG used for time to line (in knots)         | `0.5`         |
 | `lines`                   | Array of named lines                                                    | null          |
 
 ---
@@ -99,6 +100,10 @@ If `navigation.headingTrue` is not available, then `navigation.courseOverGroundT
 
  - Uses the effective VMG as the maximum VMG of either the current COG/SOG or the 90th percentile of the VMG recently achieved (approx in the last 10 minutes).
    This allows a boat to luff / delay without changing the time to line.
+ - Each effective VMG is floored at `minEffectiveVmg` (default 0.5 knots), so a direction
+   with nothing collected yet - or a drifting boat - still yields a time rather than none.
+   The floor is not applied to the along-line leg when the boat is inside the start zone,
+   there being no such leg to sail.
  - A boat within the start zone has the time calculated by the perpendicular distance to the line divided by their effective VMG to the line.
  - A boat outside the start zone also has the perpendicular time plus the time calculated by the parallel distance to the zone divided by their effective VMG in that direction.
  - If the line is changed, then the samples used to calculate the effective VMGs are cleared.

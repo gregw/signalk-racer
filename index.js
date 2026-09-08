@@ -66,7 +66,7 @@ module.exports = (app) => {
             minEffectiveVmg: {
                 type: 'number',
                 title: 'Minimum effective VMG in knots used to estimate time to line',
-                default: 1.0
+                default: 0.5
             },
             maxDistance: {
                 type: 'number',
@@ -1283,7 +1283,7 @@ module.exports = (app) => {
             initRacer({
                 minSog: options.minSog ?? 1.0,
                 minVmg: options.minVmg ?? 0.01,
-                minEffectiveVmg: (options.minEffectiveVmg ?? 1.0) * 0.514444,
+                minEffectiveVmg: (options.minEffectiveVmg ?? 0.5) * 0.514444,
                 maxDistance: options.maxDistance ?? 2000,
                 maxSamples: options.maxSamples ?? 600,
                 percentile: options.percentile ?? 0.9
