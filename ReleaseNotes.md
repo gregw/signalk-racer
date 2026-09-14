@@ -1,4 +1,4 @@
-## 1.2.1 Start line approach
+## 1.3.1 Start line approach
  + Fixed the distance to the start zone being measured against a 54.7 degree wedge while
    the zone itself was tested at 45 degrees, so `distanceStartline` and `timeToLine`
    jumped by 0.29 times the offset as a boat crossed the boundary. They are now continuous
@@ -24,7 +24,7 @@
    only the collected half, so a client drawing the approach from it disagreed with the
    published time whenever the boat was going well
 
-## 1.2.0 Visualize line and best VMGs
+## 1.3.0 Visualize line and best VMGs
  + Added `navigation.racing.swapStartLine` to swap the port and starboard ends of the line,
    carrying the collected VMG samples across with the ends
  + Published the four best VMGs behind the time to line as `navigation.racing.bestVmg.`
@@ -43,6 +43,8 @@
  + Fixed the collected VMG samples being discarded whenever any waypoint changed
  + Fixed the start line bias not being cleared when the line is lost
  + Fixed the webapp race countdown never being displayed
+
+## 1.2.0 Never released
 
 ## 1.1.2 TTL fixes
  + use a FIFO queue for VMGs towards the line.
