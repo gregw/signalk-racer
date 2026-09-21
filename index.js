@@ -145,9 +145,21 @@ module.exports = (app) => {
                         "value": {
                             "type": "number",
                             "units": "m",
+                            "displayUnits": { "category": "length" },
                             "description": "Length of the start line",
                             "displayName": "Length of the start line",
                             "shortName": "SLL"
+                        }
+                    },
+                    {
+                        "path": "navigation.racing.distanceStartline",
+                        "value": {
+                            "type": "number",
+                            "units": "m",
+                            "displayUnits": { "category": "length" },
+                            "description": "The minimum distance from the bow to the start line, via perpendicular approach",
+                            "displayName": "Distance to the start line",
+                            "shortName": "DTL"
                         }
                     },
                     {
@@ -225,6 +237,7 @@ module.exports = (app) => {
                         "value": {
                             "type": "number",
                             "units": "m",
+                            "displayUnits": { "category": "length" },
                             "description": "Bias of the start line for the starboard end",
                             "displayName": "Bias of the start line for the starboard end",
                             "shortName": "Bias"

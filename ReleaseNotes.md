@@ -1,3 +1,6 @@
+## 1.3.2 Distance to length
+ + Set the metadata for distance to line as a length rather than as a distance.
+
 ## 1.3.1 Start line approach
  + Fixed the distance to the start zone being measured against a 54.7 degree wedge while
    the zone itself was tested at 45 degrees, so `distanceStartline` and `timeToLine`
