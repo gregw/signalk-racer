@@ -1,3 +1,7 @@
+## 1.3.3 Updated for Skip widgets
+ + Updated the line visualisation to match the latest skip widget.
+ + Update the documentation to reflect the latest skip widget.
+
 ## 1.3.2 Distance to length
  + Set the metadata for distance to line as a length rather than as a distance.
 

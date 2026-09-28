@@ -71,7 +71,11 @@
             gap: 0 0.5em;
         }
 
-        .viz { width: 100%; max-width: 400px; }
+        /* The drawing takes the full width of the window, at up to twice the widget's
+           original 260px height. Narrow windows get a shorter drawing so it keeps a
+           sensible aspect; the drawing widens its own viewBox to fill whatever it gets. */
+        .viz { width: 100%; }
+        #lineSvg { display: block; width: 100%; height: min(520px, max(260px, 65vw)); }
 
         .vmg-row { display: flex; align-items: center; justify-content: center; gap: 0.15em; }
 
@@ -151,6 +155,7 @@
         sog: null,
         timeToStart: null,
         timerRunning: false,
+        startTime: null,
         timeToLine: null,
         distanceToLine: null,
         boatLength: null,
@@ -325,6 +330,7 @@
                                     // The plugin clears startTime whenever the timer is not
                                     // counting down, so it doubles as the running flag.
                                     nav.timerRunning = !!value.value;
+                                    nav.startTime = value.value || null;
                                     scheduleRender();
                                     if (!value.value) {
                                         document.getElementById('startTime').value = "HH:MM:SS";
@@ -425,6 +431,7 @@
                 nav.sog = leaf(data.speedOverGround);
                 nav.timeToStart = leaf(racing.timeToStart);
                 nav.timerRunning = !!leaf(racing.startTime);
+                nav.startTime = leaf(racing.startTime);
                 nav.timeToLine = leaf(racing.timeToLine);
                 nav.distanceToLine = leaf(racing.distanceStartline);
 
@@ -602,6 +609,9 @@
 
     // connect WS and load lines once the page is running
     connectWebSocket();
+    // The drawing sizes its viewBox to the box it is given, so redraw when that changes.
+    document.addEventListener('DOMContentLoaded', () =>
+        new ResizeObserver(() => scheduleRender()).observe(document.getElementById('lineSvg')));
     loadStartLines();
     loadInitialState();
 
@@ -725,7 +735,7 @@
      The names are on the title attributes for hover. -->
 <div class="viz-row">
     <div class="viz">
-        <svg id="lineSvg" viewBox="0 0 400 260" width="100%" style="max-width: 400px;"></svg>
+        <svg id="lineSvg" viewBox="0 0 400 260" preserveAspectRatio="xMidYMid meet"></svg>
         <div id="lineInfo" style="font-size: 0.9em; color: #aaa;"></div>
     </div>
 

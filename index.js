@@ -1284,6 +1284,7 @@ module.exports = (app) => {
             app.setPluginStatus?.(`signalk-racer ${pluginVersion} started`);
             app.debug(`signalk-racer ${pluginVersion} loaded from ${__dirname}`);
 
+            // These offsets are no longer sent, with the position itself being corrected.
             let fromBow = app.getSelfPath('sensors.gps.fromBow');
             let fromCenter = app.getSelfPath('sensors.gps.fromCenter');
             state.options = options;

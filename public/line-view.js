@@ -1,9 +1,11 @@
 /*
- * The start line drawing, shared in substance with the KIP racer widgets.
+ * The start line drawing, shared in substance with the Skip racer-line-view widget.
  *
- * Ported by hand from the Angular component in KIP (racer-line-view), so the webapp and
- * the widgets show the same picture of the same numbers. Kept as plain browser JS with
- * no build step, matching the rest of this webapp.
+ * Ported by hand from the watching screen of the Angular component in Skip
+ * (widget-racer-line-view/racer-line-view), so the webapp and the widget show the same
+ * picture of the same numbers. The widget's editing screens and in-drawing controls are
+ * not ported: the webapp has its own buttons for those. Kept as plain browser JS with no
+ * build step, matching the rest of this webapp.
  *
  * The line is drawn "line up": always horizontal, port (pin) end to the left and
  * starboard (committee boat) end to the right, so the course side is always the upper
@@ -16,21 +18,33 @@
     // Drawing coordinate system. The height is fixed so font sizes scale with the box;
     // the width tracks its aspect so the drawing fills it undistorted.
     const VB_HEIGHT = 260;
-    const TOP_BAND = 26;        // kept clear for the title
+    const TOP_BAND = 26;        // kept clear at the top, as the widget keeps it for its title
     const BOTTOM_MARGIN = 26;   // the line never enters the bottom 10%
     const MARGIN = 28;
-    const LABEL_FONT = 36;
+    const LABEL_FONT = 28.8;
     const LABEL_HEADROOM = 56;  // room above the line for its label
+    const LEG_FONT = 22.5;      // the approach legs' dimension labels
     const END_METRES = 10;      // both ends are taken to be 10m objects...
     const END_EXAGGERATION = 2; // ...drawn at this multiple so they stay legible
+    const END_SIZE_MAX = 40;
     const DEFAULT_BOAT_METRES = 10;
     const HULL_BEAM_RATIO = 0.36;
+    const MIN_HULL_DISPLAY_UNITS = 20;
+    // Boat lengths of line the fit keeps in frame before it will zoom in any further.
+    const LINE_IN_FRAME_LENGTHS = 10;
     const MIN_EFFECTIVE_VMG = 0.514444;  // one knot, as the plugin floors it
-    const VIEW_SMOOTHING = 10;  // percent of the height the view may drift before re-fitting
+    const VIEW_SMOOTHING = 25;  // percent of the height the view may drift before re-fitting
+    // How old the last fix may be and still judge the gun, when the position is lost by then.
+    const LAST_FIX_AT_GUN_MS = 15000;
+
+    const LEGEND_CURRENT = 'Current cog/sog to start';
+    const LEGEND_STUB = 'Current course over ground (no timer running)';
 
     const COLOUR = {
         line: '#999', port: '#f88', stb: '#8f8', boat: '#6cf', ocs: '#fc0',
-        dimension: '#FC0FC0', guide: '#888', label: '#ddd', halo: '#111'
+        lineOcs: '#f33', lineStarted: '#3c3',
+        dimension: '#FC0FC0', zoneLeg: '#b070ff', guide: '#999', label: '#999',
+        wind: '#ddd', halo: '#000'
     };
 
     /** Offset of a point from an origin, in metres east/north. */
@@ -94,33 +108,77 @@
     function create(svg) {
         let frame = null;
         let frameKey = null;
+        // The exact fit the held frame was made from. Drift is measured against this,
+        // since a frame that had to grow is held deliberately larger than its own fit.
+        let frameIdeal = null;
 
-        /** Half the boat's drawn length in metres - a model quantity, so scale-free. */
-        function boatHalfExtent(nav, c) {
-            const metres = nav.boatLength || DEFAULT_BOAT_METRES;
-            return (metres + Math.abs(c) / 5) / 2;
+        // Whether the countdown reached zero with the boat behind the line. Latched,
+        // because by the time it is worth showing nothing in the live data says so any
+        // more; only the next countdown ends it. See the Skip widget for the full story.
+        let startedClean = false;
+        let lastStartTime = null;
+        let countdownSeen = false;
+        let lastBoatSide = null;
+
+        /** How far the drawn boat reaches from its fix, in metres: the fix is the bow. */
+        function boatReach(nav) {
+            return nav.boatLength || DEFAULT_BOAT_METRES;
         }
 
         function bandTop() { return TOP_BAND + LABEL_HEADROOM; }
         function bandBottom() { return VB_HEIGHT - BOTTOM_MARGIN; }
 
-        /** Fit the line and the boat, with the boat's drawn size allowed for. */
+        /** The end of the line the boat is nearer to, as a distance along the line. */
+        function nearestEnd(geo, a) {
+            return Math.abs(a) <= Math.abs(a - geo.length) ? 0 : geo.length;
+        }
+
+        /**
+         * Fit the boat and the nearer end of the line, with the boat's drawn size allowed
+         * for. The far end is let go when holding it would cost scale, but a run of at
+         * least LINE_IN_FRAME_LENGTHS boat lengths of line is always kept, and any width
+         * the scale leaves spare is spent reaching towards the far end.
+         */
         function fitFrame(nav, geo, W) {
             const yMin = bandTop(), yMax = bandBottom();
             const boat = geo.boat;
-            const pad = boat ? boatHalfExtent(nav, boat.c) : 0;
-            const minA = Math.min(0, boat ? boat.a - pad : 0);
-            const maxA = Math.max(geo.length, boat ? boat.a + pad : geo.length);
+            const pad = boat ? boatReach(nav) : 0;
+
+            const ends = boat ? [nearestEnd(geo, boat.a)] : [0, geo.length];
+            let minA = Math.min.apply(null, ends.concat([boat ? boat.a - pad : 0]));
+            let maxA = Math.max.apply(null, ends.concat([boat ? boat.a + pad : geo.length]));
             const minC = Math.min(0, boat ? boat.c - pad : 0);
             const maxC = Math.max(0, boat ? boat.c + pad : 0);
-            const spanA = Math.max(maxA - minA, 1);
+
+            // Keep a usable run of the line itself in frame, measured on the line.
+            const wanted = Math.min(LINE_IN_FRAME_LENGTHS * boatReach(nav), geo.length);
+            const visibleLo = Math.max(minA, 0), visibleHi = Math.min(maxA, geo.length);
+            if (visibleHi - visibleLo < wanted) {
+                const middle = (visibleLo + visibleHi) / 2;
+                let lo = middle - wanted / 2, hi = middle + wanted / 2;
+                if (lo < 0) { hi -= lo; lo = 0; }
+                if (hi > geo.length) { lo = Math.max(0, lo - (hi - geo.length)); hi = geo.length; }
+                minA = Math.min(minA, lo);
+                maxA = Math.max(maxA, hi);
+            }
+
             // Keeps the across axis from collapsing when the boat sits on the line.
+            const spanA = Math.max(maxA - minA, 1);
             const spanC = Math.max(maxC - minC, spanA * 0.35);
-            return {
-                scale: Math.min((W - 2 * MARGIN) / spanA, (yMax - yMin) / spanC),
-                midA: (minA + maxA) / 2,
-                midC: (minC + maxC) / 2
-            };
+            const scale = Math.min((W - 2 * MARGIN) / spanA, (yMax - yMin) / spanC);
+
+            // Spend the width the chosen scale left over on the line, towards the far end.
+            // The scale is not recomputed: this is room already bought and standing empty.
+            if (boat) {
+                const spare = (W - 2 * MARGIN) / scale - (maxA - minA);
+                if (spare > 0) {
+                    const far = nearestEnd(geo, boat.a) === 0 ? geo.length : 0;
+                    if (far > maxA) maxA = Math.min(far, maxA + spare);
+                    else if (far < minA) minA = Math.max(far, minA - spare);
+                }
+            }
+
+            return {scale: scale, midA: (minA + maxA) / 2, midC: (minC + maxC) / 2};
         }
 
         function place(f, W, a, c) {
@@ -130,10 +188,14 @@
             };
         }
 
-        /** How far re-fitting would shift the drawing, as a fraction of its height. */
+        /**
+         * How far re-fitting would shift the drawing, as a fraction of its height,
+         * measured at the end being kept in frame and at the boat.
+         */
         function frameDrift(held, ideal, geo, W) {
+            const marks = geo.boat ? [nearestEnd(geo, geo.boat.a), geo.boat.a] : [0, geo.length];
             let worst = 0;
-            [0, geo.length].forEach(function (a) {
+            marks.forEach(function (a) {
                 const from = place(held, W, a, 0), to = place(ideal, W, a, 0);
                 worst = Math.max(worst, Math.hypot(from.x - to.x, from.y - to.y));
             });
@@ -144,9 +206,9 @@
             const boat = geo.boat;
             if (!boat) return true;
             const p = place(f, W, boat.a, boat.c);
-            const r = boatHalfExtent(nav, boat.c) * f.scale;
+            const r = boatReach(nav) * f.scale;
             return p.x - r >= 2 && p.x + r <= W - 2
-                && p.y - r >= TOP_BAND && p.y + r <= VB_HEIGHT - 2;
+                && p.y - r >= TOP_BAND && p.y + r <= bandBottom();
         }
 
         /** The line must stay clear of the bottom, however long the frame is held. */
@@ -157,15 +219,55 @@
 
         function updateFrame(nav, geo, W) {
             const key = W + '|' + geo.length.toFixed(1);
+            const tolerance = VIEW_SMOOTHING / 100;
+            // A lost fix takes the boat away, not the line: hold the frame it was last
+            // seen in rather than zooming out to the line and straight back in.
+            if (!geo.boat && frame && key === frameKey) return frame;
+
             const ideal = fitFrame(nav, geo, W);
             if (!frame || key !== frameKey
-                || frameDrift(frame, ideal, geo, W) > VIEW_SMOOTHING / 100
+                || frameDrift(frameIdeal || frame, ideal, geo, W) > tolerance
                 || !lineFitsIn(frame)
                 || !boatFitsIn(nav, frame, geo, W)) {
-                frame = ideal;
+                // Overshoot a growth by the tolerance, so an approach does not stutter
+                // through a re-fit on every other update. Shrinking is not overshot.
+                const grow = frame && ideal.scale < frame.scale;
+                frame = grow
+                    ? {scale: ideal.scale / (1 + tolerance), midA: ideal.midA, midC: ideal.midC}
+                    : ideal;
+                frameIdeal = ideal;
                 frameKey = key;
             }
             return frame;
+        }
+
+        /**
+         * Watch the countdown through zero, latching a clean start when the gun finds the
+         * boat behind the line. Any new start time, or time to start with time still to
+         * run, ends the latch.
+         */
+        function watchGun(nav, geo) {
+            const startTime = nav.startTime || null;
+            const tts = nav.timeToStart;
+            const running = startTime != null;
+            const armed = running && startTime !== lastStartTime;
+            lastStartTime = startTime;
+            if (armed) countdownSeen = false;
+            if (tts != null && tts > 0) countdownSeen = true;
+            if (!geo) lastBoatSide = null;
+            else if (geo.boat) lastBoatSide = {c: geo.boat.c, at: Date.now()};
+
+            if (startedClean) {
+                if (armed || (tts != null && tts > 0)) startedClean = false;
+                return;
+            }
+            if (!running || !countdownSeen) return;
+            if (tts != null && tts <= 0) {
+                let side = geo && geo.boat ? geo.boat.c : null;
+                if (side == null && lastBoatSide && Date.now() - lastBoatSide.at <= LAST_FIX_AT_GUN_MS)
+                    side = lastBoatSide.c;
+                startedClean = side != null && side >= 0;
+            }
         }
 
         /**
@@ -196,8 +298,19 @@
                 + ' ' + at(h * 0.55, -b * 0.42) + ' ' + at(h, 0) + ' Z';
         }
 
-        /** One leg of the approach, as a dimension line with end ticks and a label. */
-        function dimension(parts, x1, y1, x2, y2, horizontal, label, title, W) {
+        /** Whether a leg this long has room for its label in a break in the rule. */
+        function legRoomy(length, label) {
+            return length > label.length * LEG_FONT * 0.6 + 16;
+        }
+
+        /**
+         * One leg of the approach, as a dimension line with end ticks and a label.
+         *
+         * @param side Which side of the rule the label goes: horizontal -1 above, 1 below;
+         *   vertical -1 left, 1 right. Left out, a horizontal label goes above a roomy leg
+         *   and below a short one, and a vertical label to the right.
+         */
+        function buildLeg(x1, y1, x2, y2, horizontal, label, title, W, side) {
             const tick = 5;
             const ticks = horizontal
                 ? 'M' + x1 + ',' + (y1 - tick) + ' L' + x1 + ',' + (y1 + tick)
@@ -205,47 +318,156 @@
                 : 'M' + (x1 - tick) + ',' + y1 + ' L' + (x1 + tick) + ',' + y1
                   + ' M' + (x2 - tick) + ',' + y2 + ' L' + (x2 + tick) + ',' + y2;
 
-            // A dimension's value sits in a break in the rule, but a short leg has no room
-            // for one - and the along-line leg is often very short.
-            const length = Math.hypot(x2 - x1, y2 - y1);
-            const roomy = length > label.length * 9 + 16;
-            let lx, ly, anchor;
+            const F = LEG_FONT;
+            const roomy = legRoomy(Math.hypot(x2 - x1, y2 - y1), label);
+            let labelX, labelY, anchor;
             if (horizontal) {
-                if (roomy) { lx = (x1 + x2) / 2; ly = (y1 + y2) / 2 - 6; anchor = 'middle'; }
+                const below = (side != null ? side : (roomy ? -1 : 1)) > 0;
+                labelY = (y1 + y2) / 2 + (below ? F * 1.13 : -F * 0.4);
+                if (roomy) { labelX = (x1 + x2) / 2; anchor = 'middle'; }
                 else {
-                    // Out past the corner and below the rule: the boat is on this leg's
-                    // other end and the across leg runs up from the corner.
-                    lx = x1 < x2 ? x2 + 8 : x2 - 8;
-                    ly = (y1 + y2) / 2 + 17;
+                    // Out past the corner: the boat sits on this leg's other end.
+                    labelX = x1 < x2 ? x2 + F * 0.53 : x2 - F * 0.53;
                     anchor = x1 < x2 ? 'start' : 'end';
                 }
             } else {
-                lx = x1 + 8; anchor = 'start';
-                ly = roomy ? (y1 + y2) / 2 + 5 : (y1 < y2 ? y1 - 8 : y1 + 14);
+                const right = (side != null ? side : 1) > 0;
+                labelX = right ? x1 + F * 0.53 : x1 - F * 0.53;
+                anchor = right ? 'start' : 'end';
+                labelY = roomy ? (y1 + y2) / 2 + F * 0.33
+                    : (y1 < y2 ? y1 - F * 0.53 : y1 + F * 0.93);
             }
-            const width = label.length * 9;
+            // Held inside the drawing: a label pushed outside a short leg can run off it.
+            const width = label.length * F * 0.6;
             const lead = anchor === 'end' ? width : anchor === 'middle' ? width / 2 : 0;
             const trail = anchor === 'start' ? width : anchor === 'middle' ? width / 2 : 0;
-            lx = Math.min(Math.max(lx, lead + 3), Math.max(W - trail - 3, lead + 3));
+            labelX = Math.min(Math.max(labelX, lead + 3), Math.max(W - trail - 3, lead + 3));
 
-            parts.push('<g><title>' + esc(title) + '</title>'
-                + '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2
-                + '" stroke="' + COLOUR.dimension + '" stroke-width="1.5" stroke-opacity="0.9"/>'
-                + '<path d="' + ticks + '" stroke="' + COLOUR.dimension + '" stroke-width="1.5" fill="none"/>'
-                + '<text x="' + lx + '" y="' + ly + '" text-anchor="' + anchor + '" font-size="15"'
-                + ' font-weight="bold" fill="' + COLOUR.dimension + '" stroke="' + COLOUR.halo
-                + '" stroke-width="4" paint-order="stroke">' + esc(label) + '</text></g>');
+            return {x1: x1, y1: y1, x2: x2, y2: y2, ticks: ticks, label: label, title: title,
+                labelX: labelX, labelY: labelY, anchor: anchor, leading: false};
+        }
+
+        function legLabelBox(leg) {
+            const width = leg.label.length * LEG_FONT * 0.6;
+            const left = leg.anchor === 'start' ? leg.labelX
+                : leg.anchor === 'end' ? leg.labelX - width : leg.labelX - width / 2;
+            return {left: left, right: left + width,
+                top: leg.labelY - LEG_FONT * 0.75, bottom: leg.labelY + LEG_FONT * 0.25};
+        }
+
+        /**
+         * The last word on the two labels not overlapping: when holding a label inside the
+         * drawing has pushed it back across the other, the across label slides on along
+         * its own leg, towards the line, until it is clear.
+         */
+        function separateLegLabels(zone, across, towardsLine) {
+            const a = legLabelBox(zone), b = legLabelBox(across);
+            const gap = 2;
+            if (a.right + gap <= b.left || b.right + gap <= a.left
+                || a.bottom + gap <= b.top || b.bottom + gap <= a.top) return;
+            const shift = towardsLine < 0 ? b.bottom - a.top + gap : a.bottom - b.top + gap;
+            across.labelY += (towardsLine < 0 ? -1 : 1) * shift;
+        }
+
+        function drawLeg(parts, leg) {
+            const colour = leg.leading ? COLOUR.zoneLeg : COLOUR.dimension;
+            parts.push('<g><title>' + esc(leg.title) + '</title>'
+                + '<line x1="' + leg.x1 + '" y1="' + leg.y1 + '" x2="' + leg.x2 + '" y2="' + leg.y2
+                + '" stroke="' + colour + '" stroke-width="1.5" stroke-opacity="0.9"/>'
+                + '<path d="' + leg.ticks + '" stroke="' + colour + '" stroke-width="1.5" fill="none"/>'
+                + '<text x="' + leg.labelX + '" y="' + leg.labelY + '" text-anchor="' + leg.anchor
+                + '" font-size="' + LEG_FONT + '" font-weight="bold" fill="' + colour
+                + '" stroke="' + COLOUR.halo + '" stroke-width="4" paint-order="stroke">'
+                + esc(leg.label) + '</text></g>');
+        }
+
+        /**
+         * The approach the time to line is computed over: along the line into the start
+         * zone, then across to the line, as dimension lines - a distance to be made good,
+         * not a course to steer - plus where the boat reaches along them at the gun.
+         */
+        function buildApproach(nav, geo, sx, sy, scale, W) {
+            const boat = geo.boat;
+            const L = geo.length, a = boat.a, c = boat.c;
+            const ocs = c < 0, across = Math.abs(c);
+
+            // How far past an end the boat lies, and which way it must run to get back.
+            let overshoot = 0, beyondPort = false;
+            if (a > L) { overshoot = a - L; beyondPort = true; }
+            else if (a < 0) { overshoot = -a; }
+            // Inside the 45 degree wedge the zone leg vanishes: the boat closes straight
+            // across. Outside it, the corner sits on the wedge.
+            const toZone = Math.max(0, overshoot - across);
+            const cornerA = toZone > 0 ? (beyondPort ? L + across : -across) : a;
+
+            const parallelName = beyondPort ? 'toStbEnd' : 'toPortEnd';
+            const normalName = ocs ? 'fromCourseSide' : 'toCourseSide';
+            const parallel = effectiveVmg(nav, nav.effVmgAlongLine, parallelName, geo.bearing);
+            const normal = effectiveVmg(nav, nav.effVmgToLine, normalName, geo.bearing);
+
+            // The two labels meet at the corner, so each goes on the side of its own leg
+            // facing away from the other. When both legs are short both labels want the
+            // same outside quarter, so the zone label moves round to the line's side.
+            const zoneLabel = Math.round(toZone) + 'm';
+            const acrossLabel = Math.round(across) + 'm';
+            const towardsBoat = toZone > 0 ? Math.sign(sx(a) - sx(cornerA)) : 0;
+            const towardsLine = across > 0 ? Math.sign(sy(0) - sy(c)) : 0;
+            const zoneShort = !legRoomy(Math.abs(sx(a) - sx(cornerA)), zoneLabel);
+            const acrossShort = !legRoomy(Math.abs(sy(0) - sy(c)), acrossLabel);
+            const zoneSide = towardsLine === 0 ? undefined
+                : zoneShort && acrossShort ? towardsLine : -towardsLine;
+            const acrossSide = towardsBoat === 0 ? undefined : -towardsBoat;
+
+            const legs = [];
+            if (toZone > 0) {
+                legs.push(buildLeg(sx(a), sy(c), sx(cornerA), sy(c), true, zoneLabel,
+                    'Along the line to the start zone', W, zoneSide));
+            }
+            // Only a leg with another after it leads; it is drawn in its own shade.
+            if (toZone > 0 && across > 0) legs[0].leading = true;
+            if (across > 0) {
+                legs.push(buildLeg(sx(cornerA), sy(c), sx(cornerA), sy(0), false, acrossLabel,
+                    'Across to the line', W, acrossSide));
+            }
+            if (legs.length === 2) separateLegLabels(legs[0], legs[1], towardsLine);
+
+            // Where the boat reaches at the gun, walking those legs at those VMGs.
+            // A leg with no VMG behind it costs no time, as computeTimeToLine has it.
+            let gun = null;
+            const tts = nav.timeToStart;
+            if (nav.timerRunning && tts != null && tts > 0) {
+                const alongTime = parallel > 0 ? toZone / parallel : 0;
+                let gunA, gunC, ok = true;
+                if (tts <= alongTime) {
+                    const run = parallel * tts;
+                    gunA = beyondPort ? a - run : a + run;
+                    gunC = c;
+                } else if (normal > 0) {
+                    const run = Math.min(normal * (tts - alongTime),
+                        across + 400 / Math.max(scale, 1e-6));
+                    gunA = cornerA;
+                    gunC = ocs ? c + run : c - run;
+                } else { ok = false; }
+                if (ok) gun = {x: sx(gunA), y: sy(gunC)};
+            }
+            return {legs: legs, gun: gun};
         }
 
         function render(nav) {
             if (!svg) return;
             const box = svg.getBoundingClientRect();
             const aspect = box.height > 0 ? box.width / box.height : 400 / VB_HEIGHT;
+            // Clamped so an extreme aspect cannot squash the drawing into a sliver.
             const W = Math.round(VB_HEIGHT * Math.min(Math.max(aspect, 0.6), 4));
             svg.setAttribute('viewBox', '0 0 ' + W + ' ' + VB_HEIGHT);
 
-            const geo = lineGeometry(nav.port, nav.stb, nav.position);
+            // The plugin nulls the length when the line is lost, while the end positions
+            // keep their last values, so the length is what says there is a line.
+            const geo = nav.lineLength == null ? null
+                : lineGeometry(nav.port, nav.stb, nav.position);
+            watchGun(nav, geo);
             if (!geo) {
+                frame = frameKey = frameIdeal = null;
                 svg.innerHTML = '<text x="' + (W / 2) + '" y="' + (VB_HEIGHT / 2)
                     + '" text-anchor="middle" fill="' + COLOUR.guide
                     + '" font-size="16">No start line set</text>';
@@ -257,6 +479,7 @@
             const sx = function (a) { return W / 2 - (a - f.midA) * scale; };
             const sy = function (c) { return (bandTop() + bandBottom()) / 2 + (c - f.midC) * scale; };
             const portX = sx(geo.length), stbX = sx(0), lineY = sy(0);
+            const boat = geo.boat;
             const parts = [];
 
             // The wind, against the line's own orientation: with the line drawn flat, the
@@ -271,126 +494,15 @@
                 const degrees = ((nav.twd * 180 / Math.PI) % 360 + 360) % 360;
                 const off = (((nav.twd * 180 / Math.PI) - geo.bearing) % 360 + 360) % 360;
                 parts.push('<polygon points="' + [at(30, 0), at(4, 16), at(4, 6), at(-30, 6),
-                    at(-30, -6), at(4, -6), at(4, -16)].join(' ') + '" fill="' + COLOUR.label
+                    at(-30, -6), at(4, -6), at(4, -16)].join(' ') + '" fill="' + COLOUR.wind
                     + '" fill-opacity="0.65"><title>Wind from '
                     + degrees.toFixed(0).padStart(3, '0') + '°T, '
                     + (off > 180 ? 360 - off : off).toFixed(0) + '° to the line</title></polygon>');
             }
 
-            // The start zone: the line's extensions and the 45 degree wedge off each end.
-            // They decide where the approach turns, so they sit under it.
-            const reach = (W + VB_HEIGHT) / Math.max(scale, 1e-6);
-            const guide = function (a1, c1, a2, c2) {
-                parts.push('<line x1="' + sx(a1) + '" y1="' + sy(c1) + '" x2="' + sx(a2)
-                    + '" y2="' + sy(c2) + '" stroke="' + COLOUR.guide
-                    + '" stroke-width="1.2" stroke-opacity="0.6" stroke-dasharray="4 5"/>');
-            };
-            guide(0, 0, -reach, 0);
-            guide(geo.length, 0, geo.length + reach, 0);
-            guide(0, 0, -reach, reach);
-            guide(0, 0, -reach, -reach);
-            guide(geo.length, 0, geo.length + reach, reach);
-            guide(geo.length, 0, geo.length + reach, -reach);
-
-            const boat = geo.boat;
-            if (boat) {
-                const bx = sx(boat.a), by = sy(boat.c);
-                const ocs = boat.c < 0;
-                const L = geo.length, a = boat.a, c = boat.c, across = Math.abs(c);
-
-                // How far past an end the boat lies, and which way it must run to get back.
-                let overshoot = 0, beyondPort = false;
-                if (a > L) { overshoot = a - L; beyondPort = true; }
-                else if (a < 0) { overshoot = -a; }
-                // Inside the 45 degree wedge the zone leg vanishes: the boat closes
-                // straight across. Outside it, the corner sits on the wedge.
-                const toZone = Math.max(0, overshoot - across);
-                const cornerA = toZone > 0 ? (beyondPort ? L + across : -across) : a;
-
-                const parallelName = beyondPort ? 'toStbEnd' : 'toPortEnd';
-                const normalName = ocs ? 'fromCourseSide' : 'toCourseSide';
-                const parallel = effectiveVmg(nav, nav.effVmgAlongLine, parallelName, geo.bearing);
-                const normal = effectiveVmg(nav, nav.effVmgToLine, normalName, geo.bearing);
-
-                // The approach the time to line is computed over. Nobody sails parallel to
-                // the line then turns ninety degrees, so it is drawn as dimension lines:
-                // a distance to be made good, not a course to steer.
-                if (toZone > 0) {
-                    dimension(parts, sx(a), sy(c), sx(cornerA), sy(c), true,
-                        Math.round(toZone) + 'm', 'Along the line to the start zone', W);
-                }
-                if (across > 0) {
-                    dimension(parts, sx(cornerA), sy(c), sx(cornerA), sy(0), false,
-                        Math.round(across) + 'm', 'Across to the line', W);
-                }
-
-                // Where the boat reaches at the gun, walking those legs at those VMGs.
-                // A leg with no VMG behind it costs no time, as computeTimeToLine has it.
-                if (nav.timerRunning && nav.timeToStart > 0) {
-                    const alongTime = parallel > 0 ? toZone / parallel : 0;
-                    let gunA, gunC, ok = true;
-                    if (nav.timeToStart <= alongTime) {
-                        const run = parallel * nav.timeToStart;
-                        gunA = beyondPort ? a - run : a + run;
-                        gunC = c;
-                    } else if (normal > 0) {
-                        const run = Math.min(normal * (nav.timeToStart - alongTime),
-                            across + 400 / Math.max(scale, 1e-6));
-                        gunA = cornerA;
-                        gunC = ocs ? c + run : c - run;
-                    } else { ok = false; }
-                    if (ok) {
-                        parts.push('<circle cx="' + sx(gunA).toFixed(1) + '" cy="' + sy(gunC).toFixed(1)
-                            + '" r="5" fill="' + COLOUR.halo + '" stroke="' + COLOUR.dimension
-                            + '" stroke-width="2.5"><title>Where you reach at the gun,'
-                            + ' sailing these legs at these VMGs</title></circle>');
-                    }
-                }
-
-                // The current course, run out to where the boat gets to at the gun.
-                let courseLabel = null;
-                if (nav.cog != null) {
-                    const v = screenVector(nav.cog, geo.bearing);
-                    const running = nav.timerRunning && nav.timeToStart > 0;
-                    let len = 40;
-                    if (running && nav.sog != null) {
-                        // Clamped past the corner of the viewBox: a long countdown runs
-                        // well off the drawing and is clipped there anyway.
-                        len = Math.min(nav.sog * nav.timeToStart * scale, 600);
-                        courseLabel = 'Current cog/sog to start';
-                    } else {
-                        courseLabel = 'Current course over ground (no timer running)';
-                    }
-                    parts.push('<line x1="' + bx.toFixed(1) + '" y1="' + by.toFixed(1)
-                        + '" x2="' + (bx + v.x * len).toFixed(1) + '" y2="' + (by + v.y * len).toFixed(1)
-                        + '" stroke="' + COLOUR.boat + '" stroke-width="6" stroke-opacity="0.55"'
-                        + ' stroke-linecap="round"><title>' + esc(courseLabel) + '</title></line>');
-                }
-
-                // The hull at true scale, so it can be measured against the line, banded
-                // out to a scaled-up copy so it stays visible when the drawing zooms out:
-                // twice the hull at five boat lengths off.
-                const heading = nav.headingTrue != null ? nav.headingTrue : nav.cog;
-                const hv = heading != null ? screenVector(heading, geo.bearing) : {x: 0, y: -1};
-                const px = -hv.y, py = hv.x;
-                const at = function (fwd, stbd) {
-                    return (bx + hv.x * fwd + px * stbd).toFixed(1) + ','
-                        + (by + hv.y * fwd + py * stbd).toFixed(1);
-                };
-                const hull = Math.min(Math.max((nav.boatLength || DEFAULT_BOAT_METRES) * scale, 6), 200);
-                const outer = Math.max(hull + Math.abs(by - lineY) / 5, hull + 9);
-                const tip = ['SOG ' + formatKnots(nav.sog) + '  COG ' + formatBearing(nav.cog)];
-                if (courseLabel) tip.push(courseLabel);
-                parts.push('<path d="' + hullPath(at, outer) + ' ' + hullPath(at, hull)
-                    + '" fill="' + (ocs ? COLOUR.ocs : COLOUR.boat) + '" fill-rule="evenodd">'
-                    + '<title>' + esc(tip.join('\n')) + '</title></path>');
-            }
-
-            // The line, its label and its ends last, so nothing closing on it breaks it up.
-            parts.push('<line x1="' + portX + '" y1="' + lineY + '" x2="' + stbX + '" y2="' + lineY
-                + '" stroke="' + COLOUR.line + '" stroke-width="4" stroke-dasharray="10 8"/>');
-
-            const length = nav.lineLength != null ? nav.lineLength : geo.length;
+            // The length and heading label first of all: it is context for the line, not
+            // part of the approach, so anything that overlaps it wins.
+            const length = geo.length;
             const lineBearing = nav.lineBearing != null
                 ? (nav.lineBearing * 180 / Math.PI + 360) % 360 : geo.bearing;
             // The heading worth reporting is the one sailed to cross the line: ninety
@@ -408,8 +520,80 @@
                 + ' font-size="' + font + '" fill="' + COLOUR.label + '" stroke="' + COLOUR.halo
                 + '" stroke-width="8" paint-order="stroke">' + esc(label) + '</text>');
 
+            let approach = null;
+            if (boat) {
+                // The start zone: the line's extensions and the 45 degree wedge off each
+                // end. They decide where the approach turns, so they sit under it.
+                const reach = (W + VB_HEIGHT) / Math.max(scale, 1e-6);
+                const guide = function (a1, c1, a2, c2) {
+                    parts.push('<line x1="' + sx(a1) + '" y1="' + sy(c1) + '" x2="' + sx(a2)
+                        + '" y2="' + sy(c2) + '" stroke="' + COLOUR.guide
+                        + '" stroke-width="1.2" stroke-opacity="0.6" stroke-dasharray="4 5"/>');
+                };
+                guide(0, 0, -reach, 0);
+                guide(geo.length, 0, geo.length + reach, 0);
+                guide(0, 0, -reach, reach);
+                guide(0, 0, -reach, -reach);
+                guide(geo.length, 0, geo.length + reach, reach);
+                guide(geo.length, 0, geo.length + reach, -reach);
+
+                approach = buildApproach(nav, geo, sx, sy, scale, W);
+
+                const bx = sx(boat.a), by = sy(boat.c);
+                const ocs = boat.c < 0;
+
+                // The current course, run out to where the boat gets to at the gun.
+                let courseLabel = null;
+                if (nav.cog != null) {
+                    const v = screenVector(nav.cog, geo.bearing);
+                    const running = nav.timerRunning && nav.timeToStart > 0;
+                    let len = null;
+                    if (running) {
+                        if (nav.sog != null) {
+                            // Clamped past the corner of the viewBox: a long countdown
+                            // runs well off the drawing and is clipped there anyway.
+                            len = Math.min(nav.sog * nav.timeToStart * scale, 600);
+                            courseLabel = LEGEND_CURRENT;
+                        }
+                    } else {
+                        len = 40;
+                        courseLabel = LEGEND_STUB;
+                    }
+                    if (len != null) {
+                        parts.push('<line x1="' + bx.toFixed(1) + '" y1="' + by.toFixed(1)
+                            + '" x2="' + (bx + v.x * len).toFixed(1) + '" y2="' + (by + v.y * len).toFixed(1)
+                            + '" stroke="' + COLOUR.boat + '" stroke-width="6" stroke-opacity="0.55"'
+                            + ' stroke-linecap="round"><title>' + esc(courseLabel) + '</title></line>');
+                    }
+                }
+
+                // The hull, solid at true scale with a minimum size, hung aft of the fix:
+                // the fix is the bow, which is what decides whether you are over.
+                const heading = nav.headingTrue != null ? nav.headingTrue : nav.cog;
+                const hv = heading != null ? screenVector(heading, geo.bearing) : {x: 0, y: -1};
+                const px = -hv.y, py = hv.x;
+                const hull = Math.max(boatReach(nav) * scale, MIN_HULL_DISPLAY_UNITS);
+                const cx = bx - hv.x * hull / 2, cy = by - hv.y * hull / 2;
+                const at = function (fwd, stbd) {
+                    return (cx + hv.x * fwd + px * stbd).toFixed(1) + ','
+                        + (cy + hv.y * fwd + py * stbd).toFixed(1);
+                };
+                const tip = ['SOG ' + formatKnots(nav.sog) + '  COG ' + formatBearing(nav.cog)];
+                if (courseLabel) tip.push(courseLabel);
+                parts.push('<path d="' + hullPath(at, hull) + '" fill="'
+                    + (ocs ? COLOUR.ocs : COLOUR.boat) + '">'
+                    + '<title>' + esc(tip.join('\n')) + '</title></path>');
+            }
+
+            // The line itself, over everything closing on it: red when over, green once a
+            // clean start has been made.
+            const lineColour = startedClean ? COLOUR.lineStarted
+                : boat && boat.c < 0 ? COLOUR.lineOcs : COLOUR.line;
+            parts.push('<line x1="' + portX + '" y1="' + lineY + '" x2="' + stbX + '" y2="' + lineY
+                + '" stroke="' + lineColour + '" stroke-width="4" stroke-dasharray="10 8"/>');
+
             // Both ends stand for a 10m object, exaggerated so they stay legible.
-            const endSize = Math.min(Math.max(END_METRES * scale * END_EXAGGERATION, 12), 40);
+            const endSize = Math.min(Math.max(END_METRES * scale * END_EXAGGERATION, 12), END_SIZE_MAX);
             const k = endSize / 24;
             parts.push('<circle cx="' + portX + '" cy="' + lineY + '" r="' + (endSize * 0.29)
                 + '" fill="' + COLOUR.port + '" stroke="' + COLOUR.halo + '"/>');
@@ -419,6 +603,18 @@
                 + '" stroke="' + COLOUR.halo + '"/>');
             parts.push('<rect x="' + (stbX - 3 * k) + '" y="' + (lineY - 10 * k) + '" width="' + (9 * k)
                 + '" height="' + (6 * k) + '" fill="' + COLOUR.stb + '" stroke="' + COLOUR.halo + '"/>');
+
+            // The approach legs and the gun mark last, so the distances stay readable over
+            // the boat, which is exactly where they run as it closes on the line.
+            if (approach) {
+                approach.legs.forEach(function (leg) { drawLeg(parts, leg); });
+                if (approach.gun) {
+                    parts.push('<circle cx="' + approach.gun.x.toFixed(1) + '" cy="'
+                        + approach.gun.y.toFixed(1) + '" r="5" fill="' + COLOUR.halo
+                        + '" stroke="' + COLOUR.dimension + '" stroke-width="2.5"><title>Where you'
+                        + ' reach at the gun, sailing these legs at these VMGs</title></circle>');
+                }
+            }
 
             svg.innerHTML = parts.join('');
         }

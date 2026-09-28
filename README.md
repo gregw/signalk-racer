@@ -36,14 +36,20 @@ This plugin calculates and publishes the following Signal K paths:
 | `navigation.racing.timeToBurn`             | Period of time delay before sailing to the at best VMG                 | `s`                                                |     |
 | `navigation.racing.startTime`              | The start time as an ISO timestamp                                     | `rfc3339`                                          |     |
 
-These values can be displayed in KIP widgets, Freeboard-SK, or other Signal K clients.  
+These values can be displayed in Skip/KIP widgets, Freeboard-SK, or other Signal K clients.  
 There are dedicated widgets for the start timer and line adjustment since 3.5.0 of KIP 
 
-![KIP and Freeboard Screenshot](racer-kip.png)
+![Skip and Freeboard Screenshot](images/racer-skip.png)
+*Skip start line view and timer widgets besides Freeboard-SK*
 
-There is also a webapp to: adjust the line, visualize the approach to the line, adjust VMGs and configure the timer.
+![KIP and Freeboard Screenshot](images/racer-kip.png)
+*KIP racer timer and line widgets beside Freeboard-SK showing the next leg*
 
-![Signalk Racer Webapp](racer-webapp.png)
+There is also a webapp to: adjust the line, visualise the approach to the line, adjust VMGs, and configure the timer. See the Skip widgets below for a full description of the line visualisation.
+
+![Signalk Racer Webapp](images/racer-webapp.png)
+*The racer webapp: line adjustment, the approach to the line, best VMGs and the start timer*
+
 
 ---
 
@@ -70,15 +76,16 @@ You can configure the plugin via the Signal K web interface or by editing `setti
 
 ### Waypoint selection (`navigation.racing.startLinePort` and `navigation.racing.startLineStb`)
 
-The `startLineStb` and `startLinePort` configurations are used to search resources for matching waypoints. These waypoints can be modified in real time (e.g. moving or setting in Freeboard SK) and the algorithm with update to the new line.
+The `startLineStb` and `startLinePort` configurations are used to search resources for matching waypoints. These waypoints can be modified in real time (e.g. moving or setting in Freeboard SK) and the algorithm with update to the new line.  Named lines can also be used to substitute different pairs of named waypoints to use as a line.
 
 ### Bow position
 
-If `navigation.headingTrue` is not available, then `navigation.courseOverGroundTrue` is used when determining the position of the bow relative to the GPS position.
+The GPS position provided is assumed to be the **bow** of the boat.  The offsets should be set in the signalk-server configuration to make this so.   If the offsets are not set correctly, then the consistency in angle when pinging the line ends and approaching to start will compensate.
 
 ### Distance to Start Line (`navigation.racing.distanceStartline`)
 
-![Distance to Start Line](racer-line.png)
+![Distance to Start Line](images/racer-line.png)
+*The start zone: inside it the distance is straight across to the line, outside it the boat must first reach the zone*
 
 - Computes the distance from the **bow** of the boat to the configured start line.  
 - For boats within the start zone (defined as with a 45 degree bearing to each end of the line), the perpendicular distance to the line is used.
@@ -152,12 +159,21 @@ Runs along the boat's present `navigation.courseOverGroundTrue`. While the start
 down, its length is `SOG × timeToStart`: the distance the boat will cover before the gun if nothing
 changes. Its tip is therefore **where the boat will be when the start fires**:
 
-- tip short of the line — the boat is late and will cross after the gun
+- tip short of the line — the boat will be late at current speed and heading.
 - tip on the line — a perfect start
-- tip beyond the line — the boat is early and will be OCS
+- tip beyond the line — the boat is early and will be OCS unless speed reduces or heading changes.
 
 With no timer running there is nothing to project against, so it degrades to a short fixed-length
 stub showing course only.
+
+#### VMG projection — "Best VMG to start"
+
+A round hollow dot is displayed along the distance to line vectors that shows where the boat could be if it sails its best VMG into the zone and then its best VMG to the line. If the dot is not displayed, then either the timer has not started or the best VMG takes the boat beyond the current view.   
+
+Ideally, when approaching the line, the VMG projection should be just over the line and the Course projection just behind the line. This indicates that the boat is sailing near to the line at the start and can speed up to be exactly on time.
+
+See the Skip widgets below for a full description of the line visualisation.
+
 
 ---
 
@@ -233,16 +249,75 @@ Used to **start**, **sync**, **reset**, or **set a fixed start time**.
 ```
 ---
 
-## 🧩 KIP Widgets
-KIP components for `racer-timer` and `racer-line` have been developed and are available from release 3.5.0 of KIP.
+## 🧩 Skip Widgets
+The Skip instrument plugin includes widgets for `racer-timer`, `racer-line` and `race-line-view`. The KIP plugin also contains older `racer-timer` and `racer-line` widgets.   
 
-## 🔄 Dependencies
+![Skip Line View:  Approaching the start zone](images/racer-skip-approach.png)
+*Approaching the start zone*
 
-### Plugins
-- [KIP >= 3.5.0](https://github.com/mxtommy/Kip) for graphic widget support
-- [FreeboardSK](https://github.com/SignalK/freeboard-sk#readme) for graphic display of the start line
-- [resources-provider](https://www.npmjs.com/package/@signalk/resources-provider) plugin with waypoints enabled
-- [course-provider](https://www.npmjs.com/package/@signalk/course-provider) plugin to enable the next leg calculations
+The `skip-line-view` widget is a graphical alternative to the `racer-line` widget, both have similar features.
+The screenshot above shows the Skip `racer-line-view` widget with:
+ + Line always displayed horizontally, with extension lines and 45-degree approaches
+ + The current True Wind Direction (TWD) is shown in the top right
+ + The distance the boat needs to cover to both reach the start zone (72m) and to reach the line (21m) is shown.
+ + The blue projection line showing where the boat will be at the start time on the current course and speed (COG/SOG)
+ + The best VMG dot showing where the boat could be if it sails to the zone and then the line at its best VMG.
+ + The time to line (0:43) is shown in seconds for the boat's best VMG.
+ + The time to burn (0:12) is shown in seconds for the time the boat must waste to arrive on the line on time.
+ + The '...' mode selector to access other views/configurations.
+
+
+![Skip Line View:  Final Approach](images/racer-skip-final.png)
+*Final Approach to the start line*
+
+The screenshot above shows the Skip `racer-line-view` widget with the boat in the final approach to the line: 4s/11m from the line with 2s to burn. The current course projection has not crossed the line, but the best VMG dot is just over the line. This view indicates that boat should accelerate to full speed in 2 seconds for a perfect start.
+
+![Skip Line View:  Good Start](images/racer-skip-started.png)
+*Good start line goes Green*
+
+On a good start, the line goes green and stays green until the timer is reset.
+
+![Skip Line View:  OCS Start](images/racer-skip-ocs.png)
+*OCS start line goes Red*
+
+If the boat is on the course side (OCS) when the tim*Set start line*counts to zero, then the line goes red and stays green until the timer is reset.
+
+![Skip Line View:  Set Line](images/racer-skip-set-line.png)
+*Set the line*
+
+The first mode screen selected from the `racer-line-view` widget displays the current line length and perpendicular header.  The ends of the lines may be "pinged" by press the button at either either end. Alternately, a known line can be configured in the plugin configuration and selected by name on this screen.
+
+
+![Skip Line View:  Adjust the Line](images/racer-skip-adjust-line.png)
+*Adjust the line*
+
+The second mode screen selected from the `racer-line-view` widget allows each ends of the line to be adjusted manually if there is no time to "ping" an end after it has been moved or incorrectly set.
+
+![Skip Line View:  Best VMGs](images/racer-skip-vmgs.png)
+*Best VMGs*
+
+The third mode screen selected from the `racer-line-view` widget displays the effective best VMGs relative to the line that have been calculated by the plugin. These may be selected and manually adjusted with the "VMG" button; "Reset" to remove all manual adjustments; or "Clear" to discard all collected VMG samples.
+
+![Skip Timer:  Start Timer](images/racer-timer-start.png)
+*Start Timer*
+
+The screenshot above shows the Skip `racer-timer` widget with the start button available to start the timer and the +/- minute adjustment buttons. Other views are available via the "..." mode button.
+
+![Skip Timer:  Adjust Timer](images/racer-timer-start.png)
+*Adjust Timer*
+
+The adjust mode screen of the `racer-timer` widget allows the start time to be adjusted by +/- minutes or +/- seconds, even when the timer is running.
+
+![Skip Timer:  Set Timer](images/racer-timer-set.png)
+*Set Timer*
+
+The set mode screen of the `racer-timer` widget allows the start time to be set to a specific absolute time. Perfect for pursuit style races.
+
+![Skip Timer:  Sync Timer](images/racer-timer-sync.png)
+*Sync Timer*
+
+The sync mode screen of the `racer-timer` widget allows the start time to be synced to the nearest whole minute, or reset to the initial value.
+
 
 ### Libraries
 - `geolib`: for distance and bearing calculations.
@@ -251,8 +326,7 @@ KIP components for `racer-timer` and `racer-line` have been developed and are av
 
 ## 🧪 Future Plans
 
-- Add calculations for:
-- **Time to burn**
+- **Polars** - include polars in the effective VMG calculations
 - **Laylines** and distance/time to them
 
 --- 
@@ -260,7 +334,6 @@ KIP components for `racer-timer` and `racer-line` have been developed and are av
 
 Bug reports and suggestions are welcome at  
 [https://github.com/gregw/signalk-racer](https://github.com/gregw/signalk-racer)
-
 
 ---
 ## Development
