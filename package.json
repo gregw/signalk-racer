@@ -3,6 +3,9 @@
   "version": "1.3.4",
   "description": "Signalk plugin to calculate values of interest to sail racers, such as: Time to Start; Time of Start, Time to Burn; Distance to Line; Next leg TWA.",
   "main": "index.js",
+  "engines": {
+    "node": ">=18"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/gregw/signalk-racer.git"
