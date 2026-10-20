@@ -40,14 +40,17 @@ These values can be displayed in Skip/KIP widgets, Freeboard-SK, or other Signal
 There are dedicated widgets for the start timer and line adjustment since 3.5.0 of KIP 
 
 ![Skip and Freeboard Screenshot](images/racer-skip.png)
+
 *Skip start line view and timer widgets besides Freeboard-SK*
 
 ![KIP and Freeboard Screenshot](images/racer-kip.png)
+
 *KIP racer timer and line widgets beside Freeboard-SK showing the next leg*
 
 There is also a webapp to: adjust the line, visualise the approach to the line, adjust VMGs, and configure the timer. See the Skip widgets below for a full description of the line visualisation.
 
-![Signalk Racer Webapp](images/racer-webapp.png)
+![Signalk Racer](images/racer-webapp.png)
+
 *The racer webapp: line adjustment, the approach to the line, best VMGs and the start timer*
 
 
@@ -85,6 +88,7 @@ The GPS position provided is assumed to be the **bow** of the boat.  The offsets
 ### Distance to Start Line (`navigation.racing.distanceStartline`)
 
 ![Distance to Start Line](images/racer-line.png)
+
 *The start zone: inside it the distance is straight across to the line, outside it the boat must first reach the zone*
 
 - Computes the distance from the **bow** of the boat to the configured start line.  
@@ -253,6 +257,7 @@ Used to **start**, **sync**, **reset**, or **set a fixed start time**.
 The Skip instrument plugin includes widgets for `racer-timer`, `racer-line` and `race-line-view`. The KIP plugin also contains older `racer-timer` and `racer-line` widgets.   
 
 ![Skip Line View:  Approaching the start zone](images/racer-skip-approach.png)
+
 *Approaching the start zone*
 
 The `skip-line-view` widget is a graphical alternative to the `racer-line` widget, both have similar features.
@@ -268,52 +273,62 @@ The screenshot above shows the Skip `racer-line-view` widget with:
 
 
 ![Skip Line View:  Final Approach](images/racer-skip-final.png)
+
 *Final Approach to the start line*
 
 The screenshot above shows the Skip `racer-line-view` widget with the boat in the final approach to the line: 4s/11m from the line with 2s to burn. The current course projection has not crossed the line, but the best VMG dot is just over the line. This view indicates that boat should accelerate to full speed in 2 seconds for a perfect start.
 
 ![Skip Line View:  Good Start](images/racer-skip-started.png)
+
 *Good start line goes Green*
 
 On a good start, the line goes green and stays green until the timer is reset.
 
 ![Skip Line View:  OCS Start](images/racer-skip-ocs.png)
+
 *OCS start line goes Red*
 
 If the boat is on the course side (OCS) when the tim*Set start line*counts to zero, then the line goes red and stays green until the timer is reset.
 
 ![Skip Line View:  Set Line](images/racer-skip-set-line.png)
+
 *Set the line*
 
 The first mode screen selected from the `racer-line-view` widget displays the current line length and perpendicular header.  The ends of the lines may be "pinged" by press the button at either either end. Alternately, a known line can be configured in the plugin configuration and selected by name on this screen.
 
 
 ![Skip Line View:  Adjust the Line](images/racer-skip-adjust-line.png)
+
 *Adjust the line*
 
 The second mode screen selected from the `racer-line-view` widget allows each ends of the line to be adjusted manually if there is no time to "ping" an end after it has been moved or incorrectly set.
 
 ![Skip Line View:  Best VMGs](images/racer-skip-vmgs.png)
+
 *Best VMGs*
 
 The third mode screen selected from the `racer-line-view` widget displays the effective best VMGs relative to the line that have been calculated by the plugin. These may be selected and manually adjusted with the "VMG" button; "Reset" to remove all manual adjustments; or "Clear" to discard all collected VMG samples.
 
 ![Skip Timer:  Start Timer](images/racer-timer-start.png)
+
 *Start Timer*
 
 The screenshot above shows the Skip `racer-timer` widget with the start button available to start the timer and the +/- minute adjustment buttons. Other views are available via the "..." mode button.
 
 ![Skip Timer:  Adjust Timer](images/racer-timer-start.png)
+
 *Adjust Timer*
 
 The adjust mode screen of the `racer-timer` widget allows the start time to be adjusted by +/- minutes or +/- seconds, even when the timer is running.
 
 ![Skip Timer:  Set Timer](images/racer-timer-set.png)
+
 *Set Timer*
 
 The set mode screen of the `racer-timer` widget allows the start time to be set to a specific absolute time. Perfect for pursuit style races.
 
 ![Skip Timer:  Sync Timer](images/racer-timer-sync.png)
+
 *Sync Timer*
 
 The sync mode screen of the `racer-timer` widget allows the start time to be synced to the nearest whole minute, or reset to the initial value.

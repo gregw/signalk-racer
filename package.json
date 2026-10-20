@@ -15,7 +15,7 @@
   "signalk-plugin-enabled-by-default": false,
   "signalk": {
     "appIcon": "assets/signalk-racer-72x72.png",
-    "displayName": "Signalk Racer WebApp"
+    "displayName": "Signalk Racer"
   },
   "author": "gregw@mortbay.com",
   "license": "Apache-2.0",

@@ -1,3 +1,7 @@
+## 1.3.4 Updated presentation
+ + New logo
+ + Named just "Signalk Racer"
+
 ## 1.3.3 Updated for Skip widgets
  + Updated the line visualisation to match the latest skip widget.
  + Update the documentation to reflect the latest skip widget.
