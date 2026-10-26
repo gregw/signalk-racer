@@ -5,6 +5,8 @@
    way along, or auto-advanced before the start, left the line showing only `--`
  + The line is now calculated whenever the start timer is counting down, or otherwise when
    within the new `nearLineDistance` (default 1nm) of the line
+ + Trimmed the npm package from 2.2MB to just what the plugin needs. The README screenshots
+   are now linked from GitHub at this release's tag, rather than shipped in the package
 
 ## 1.3.4 Updated presentation
  + New logo

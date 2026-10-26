@@ -6,6 +6,13 @@
   "engines": {
     "node": ">=18"
   },
+  "files": [
+    "index.js",
+    "racer.js",
+    "openapi.json",
+    "public/",
+    "ReleaseNotes.md"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/gregw/signalk-racer.git"
