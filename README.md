@@ -71,6 +71,7 @@ You can configure the plugin via the Signal K web interface or by editing `setti
 | `updateStartLineWaypoint` | Should the waypoints be updated if the line is set/adjusted             | `true`        |
 | `createStartLineWaypoint` | Should the waypoints be created if the line is set                      | `true`        |
 | `minEffectiveVmg`         | Floor under each effective VMG used for time to line (in knots)         | `0.5`         |
+| `nearLineDistance`        | Distance to line within which it is calculated without a countdown (nm) | `1`           |
 | `lines`                   | Array of named lines                                                    | null          |
 
 ---
@@ -98,7 +99,7 @@ The GPS position provided is assumed to be the **bow** of the boat.  The offsets
 - The result is:
     - **Negative** when the bow is **over the line (OCS)**
     - **Positive** when the bow is **behind the line**
-- If the boat is navigating a route and the next waypoint is beyond the second in the route, then the distance to line is not calculated.
+- The distance to line is calculated while the start timer is counting down, or otherwise when within `nearLineDistance` (default 1nm) of the line. The active route is not considered.
 
 ### Start Line Bias (`navigation.racing.stbLineBias`)
 
@@ -122,12 +123,12 @@ The GPS position provided is assumed to be the **bow** of the boat.  The offsets
    is actually sailing still wins if it is better, so an adjustment can never make the estimate
    ignore real progress. Adjustments are cleared when the start timer reaches zero, when the line
    changes, and by the `reset` command.
- - If the boat is navigating a route and the next waypoint is beyond the second in the route, then the time to line is not calculated.
+ - Like the distance to line, it is only calculated while the start timer is counting down or when within `nearLineDistance` of the line.
 
 
 ### Time To Burn (`navigation.racing.timeToBurn`)
  - If the start timer is running and the boat is not OCS, then the time to burn is calculated by subtracting the time to line from the remaining start time. 
- - If the boat is navigating a route and the next waypoint is beyond the second in the route, then the time to line is not calculated.
+ - Like the distance to line, it is only calculated while the start timer is counting down or when within `nearLineDistance` of the line.
 
 ### Line Coordinates & Length
 
@@ -139,7 +140,7 @@ The GPS position provided is assumed to be the **bow** of the boat.  The offsets
 ### Next Leg
 - If a course is active then the true bearing for the next leg is calculated as `navigation.racing.nextLegHeading`
 - If the `environment.wind.directionTrue` is available, then the True Wind Angle for the next leg is also calculated as `navigation.racing.nextLegTrueWindAngle`
-- If the next mark of the active route is beyond the first mark, then the start line calculations are suspended.
+- The active route does not affect the start line calculations.
 
 ---
 

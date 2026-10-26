@@ -72,6 +72,11 @@ module.exports = (app) => {
                 title: 'Maximum distance to line and/or line zone in meters to consider for VMG calculations',
                 default: 2000
             },
+            nearLineDistance: {
+                type: 'number',
+                title: 'Distance to line in nautical miles within which the line is calculated when the start timer is not counting down',
+                default: 1
+            },
             lines: {
                 type: 'array',
                 title: 'Named lines',
@@ -1019,21 +1024,16 @@ module.exports = (app) => {
         }
     }
 
-    function isNearLineInRoute() {
-        // e.g. {
-        //   "href":"/resources/routes/a12eefe7-8fd3-49f7-81af-ce1f3440d3ff",
-        //   "name":"Course 1",
-        //   "reverse":false,
-        //   "pointIndex":1,
-        //   "pointTotal":5
-        // }
-
-        const activeRoute = state.activeRoute;
-        if (!activeRoute)
+    /**
+     * Whether the line is worth calculating: always while the start timer is counting
+     * down, otherwise only within nearLineDistance of it. The active route plays no part:
+     * its point index says nothing reliable about where the start is.
+     */
+    function isLineInPlay(distanceToLine) {
+        if (state.timerRunning && state.timeToStart > 0)
             return true;
-        if (activeRoute.pointIndex < 2)
-            return true;
-        return activeRoute.pointIndex + 2 >= activeRoute.pointTotal;
+        const nearLine = (state.options.nearLineDistance ?? 1) * 1852;
+        return distanceToLine != null && Math.abs(distanceToLine) <= nearLine;
     }
 
     function processPosition(position) {
@@ -1046,7 +1046,7 @@ module.exports = (app) => {
         const startLine = state.startLine;
 
         app.debug(`processPosition ${JSON.stringify(position)} to ${JSON.stringify(startLine)}`);
-        if (position && startLine && isNearLineInRoute()) {
+        if (position && startLine) {
             // handle the bow offset
             const bow = bowPosition(position);
 
@@ -1095,6 +1095,10 @@ module.exports = (app) => {
             // The geometry itself lives in racer.js so it can be unit tested.
             const {ocs, perpToLineVx, toZoneVz, distanceToLine} = startZoneDistances(toEnd, angle);
             app.debug('distanceToLine:' + distanceToLine);
+            if (!isLineInPlay(distanceToLine)) {
+                clearLineDeltas();
+                return;
+            }
             state.distanceToLine = distanceToLine;
 
             // Collect VMG samples
@@ -1117,16 +1121,22 @@ module.exports = (app) => {
             ]);
             publishBestVmg({ocs, toZoneVz, closestEnd, cog, sog, lineBearing: startLine.bearing});
 
-        } else if (state.distanceToLine) {
-            state.distanceToLine = null;
-            sendDeltas([
-                {path: 'navigation.racing.distanceStartline', value: null},
-                {path: 'navigation.racing.stbLineBias', value: null},
-                {path: 'navigation.racing.timeToLine', value: null},
-                {path: 'navigation.racing.timeToBurn', value: null},
-            ]);
-            publishBestVmg();
+        } else {
+            clearLineDeltas();
         }
+    }
+
+    function clearLineDeltas() {
+        if (state.distanceToLine == null)
+            return;
+        state.distanceToLine = null;
+        sendDeltas([
+            {path: 'navigation.racing.distanceStartline', value: null},
+            {path: 'navigation.racing.stbLineBias', value: null},
+            {path: 'navigation.racing.timeToLine', value: null},
+            {path: 'navigation.racing.timeToBurn', value: null},
+        ]);
+        publishBestVmg();
     }
 
     function processWind(twd) {
@@ -1148,7 +1158,7 @@ module.exports = (app) => {
 
         let bias = null;
         const startLine = state.startLine;
-        if (startLine && isNearLineInRoute()) {
+        if (startLine && isLineInPlay(state.distanceToLine)) {
             app.debug(`processWind ${twd} to ${JSON.stringify(startLine)}`);
             bias = - startLine.length * Math.cos(toRadians(startLine.bearing) - twd);
         }

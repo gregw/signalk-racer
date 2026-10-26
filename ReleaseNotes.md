@@ -1,3 +1,11 @@
+## 1.3.5 Start line regardless of route
+ + The active route no longer decides whether the start line is calculated. It suspended
+   the distance to line, time to line and time to burn whenever the route's next point was
+   past the second and before the last two, even mid countdown, so a route activated part
+   way along, or auto-advanced before the start, left the line showing only `--`
+ + The line is now calculated whenever the start timer is counting down, or otherwise when
+   within the new `nearLineDistance` (default 1nm) of the line
+
 ## 1.3.4 Updated presentation
  + New logo
  + Named just "Signalk Racer"
