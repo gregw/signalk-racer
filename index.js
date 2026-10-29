@@ -801,19 +801,43 @@ module.exports = (app) => {
         publishBestVmg();
     }
 
-    function setTimer() {
+    // Whole seconds still to go until startTime, as a countdown shows them.
+    function secondsToStart(startTime, now = Date.now()) {
+        return Math.max(0, Math.ceil((Date.parse(startTime) - now) / 1000));
+    }
+
+    function clearTimer() {
         if (state.timerInterval)
-            clearInterval(state.timerInterval);
-        state.timerInterval = setInterval(() => {
-            if (!state.timerRunning || state.timeToStart <= 0) {
-                clearInterval(state.timerInterval);
+            clearTimeout(state.timerInterval);
+        state.timerInterval = null;
+    }
+
+    // While running, startTime is the source of truth: each tick works timeToStart out
+    // from it again, so late ticks never accumulate, and the next tick is scheduled for
+    // just after the next whole second before startTime.
+    function setTimer() {
+        clearTimer();
+        if (!state.timerRunning || !state.startTime)
+            return;
+        const tick = () => {
+            state.timerInterval = null;
+            if (!state.timerRunning || !state.startTime)
                 return;
+            const now = Date.now();
+            const timeToStart = secondsToStart(state.startTime, now);
+            if (timeToStart !== state.timeToStart) {
+                state.timeToStart = timeToStart;
+                sendDeltas([{path: 'navigation.racing.timeToStart', value: state.timeToStart}]);
+                if (state.timeToStart <= 0)
+                    clearBestVmgOverridesAtStart();
             }
-            state.timeToStart--;
-            sendDeltas([{path: 'navigation.racing.timeToStart', value: state.timeToStart}]);
-            if (state.timeToStart <= 0)
-                clearBestVmgOverridesAtStart();
-        }, 1000);
+            if (state.timeToStart > 0) {
+                const untilNext = Date.parse(state.startTime) - now - (state.timeToStart - 1) * 1000;
+                state.timerInterval = setTimeout(tick, Math.max(1, untilNext));
+            }
+        };
+        state.timeToStart = secondsToStart(state.startTime);
+        tick();
     }
 
     async function startTimeCommand(context, path, args, callback) {
@@ -846,7 +870,7 @@ module.exports = (app) => {
                 case 'reset': {
                     state.timerRunning = false;
                     state.timeToStart = state.options.timer ?? 300;
-                    if (state.timerInterval) clearInterval(state.timerInterval);
+                    clearTimer();
 
                     sendDeltas([
                         {path: 'navigation.racing.timeToStart', value: state.timeToStart},
@@ -859,7 +883,7 @@ module.exports = (app) => {
                     if (!state.timerRunning || state.timeToStart == null)
                         return complete(callback, 500, 'sync timer: !running');
 
-                    const rounded = Math.round(state.timeToStart / 60) * 60;
+                    const rounded = Math.round(secondsToStart(state.startTime) / 60) * 60;
                     state.timeToStart = rounded;
                     state.startTime = new Date(Date.now() + rounded * 1000).toISOString();
 
@@ -882,8 +906,7 @@ module.exports = (app) => {
                         return complete(callback, 400, 'reset timer: invalid startTime');
                     }
 
-                    const now = new Date();
-                    const secondsToGo = Math.floor((inputTime - now) / 1000);
+                    const secondsToGo = secondsToStart(inputTime.toISOString());
 
                     if (secondsToGo <= 0) {
                         state.timerRunning = false;
@@ -918,16 +941,17 @@ module.exports = (app) => {
                     if (state.timeToStart == null)
                         return complete(callback, 400, 'adjust timer: Cannot adjust start time');
 
-                    const nextTimeToStart = state.timeToStart + delta;
+                    // A running countdown shifts its startTime, keeping its sub-second offset.
+                    const nextStartTime = state.timerRunning && state.startTime
+                        ? new Date(Date.parse(state.startTime) + delta * 1000).toISOString()
+                        : null;
+                    const nextTimeToStart = nextStartTime ? secondsToStart(nextStartTime) : state.timeToStart + delta;
                     if (nextTimeToStart <= 0)
                         return complete(callback, 200, 'adjust timer: Ignored negative start time');
 
                     state.timeToStart = nextTimeToStart;
-
-                    if (state.timerRunning) {
-                        let now = Date.now();
-                        state.startTime = new Date(now - (now % 1000) + state.timeToStart * 1000).toISOString();
-                    }
+                    if (nextStartTime)
+                        state.startTime = nextStartTime;
 
                     const deltas = [
                         { path: 'navigation.racing.timeToStart', value: state.timeToStart }
@@ -935,8 +959,7 @@ module.exports = (app) => {
                     if (state.timerRunning && state.startTime) {
                         deltas.push({path: 'navigation.racing.startTime', value: state.startTime });
                     }
-                    if (delta % 60 !== 0)
-                        setTimer();
+                    setTimer();
 
                     sendDeltas(deltas);
 
@@ -1313,8 +1336,9 @@ module.exports = (app) => {
                     const now = Date.now();
                     const startAtTime = new Date(startTime.value);
                     if (startAtTime > now) {
-                        state.timeToStart = Math.round((new Date(state.startTime) - now) / 1000);
+                        state.timeToStart = secondsToStart(state.startTime, now);
                         state.timerRunning = true;
+                        setTimer();
                     } else {
                         state.timeToStart = 0;
                         state.timerRunning = false;
@@ -1507,6 +1531,7 @@ module.exports = (app) => {
         stop: () => {
             unsubscribes.forEach((f) => f());
             unsubscribes.length = 0;
+            clearTimer();
             state.startLine = null;
         },
 

@@ -1,3 +1,13 @@
+## 1.3.6 Start timer keeps time
+ + `timeToStart` no longer drifts behind `startTime`. The countdown subtracted a second on
+   each tick, so every late tick added to the error and on a loaded host it could reach 0
+   several seconds after the real start. It is now worked out from `startTime` on every
+   tick, with ticks on `startTime`'s whole seconds (#8)
+ + `adjust` shifts the existing `startTime` by the delta, rather than re-basing it on now
+ + A countdown already running when the plugin starts now keeps counting, rather than
+   freezing, and the timer is stopped when the plugin is stopped
+ + Added tests that drive the start timer through the plugin
+
 ## 1.3.5 Start line regardless of route
  + The active route no longer decides whether the start line is calculated. It suspended
    the distance to line, time to line and time to burn whenever the route's next point was
