@@ -446,20 +446,43 @@ module.exports = (app) => {
         }
     }
 
+    function selfNumber(path) {
+        const value = app.getSelfPath(path)?.value;
+        return typeof value === 'number' && Number.isFinite(value) ? value : null;
+    }
+
+    // Where navigation.position is on the hull. The server publishes sensors.gps.fromBow
+    // and fromCenter for this, whether the position is at an antenna or corrected to the
+    // CCRP (midships on the centreline). They are read each time, as the server can
+    // publish or change them at any time. Without a published fromBow, the position is
+    // assumed to be the CCRP, half the boat's length aft of the bow.
+    function positionOffsets() {
+        let fromBow = selfNumber('sensors.gps.fromBow');
+        if (fromBow == null) {
+            const length = app.getSelfPath('design.length')?.value;
+            const overall = typeof length === 'number' ? length : length?.overall;
+            if (typeof overall === 'number' && overall > 0)
+                fromBow = overall / 2;
+        }
+        return {fromBow, fromCenter: selfNumber('sensors.gps.fromCenter')};
+    }
+
     function bowPosition(position) {
         let headingTrue = app.getSelfPath("navigation.headingTrue");
         if (!headingTrue)
             headingTrue = app.getSelfPath("navigation.courseOverGroundTrue");
-        if (!headingTrue || (!state.gpsFromBow && !state.gpsFromCenter))
+        const {fromBow, fromCenter} = positionOffsets();
+        if (!headingTrue || (!fromBow && !fromCenter))
             return position
 
         headingTrue = toDegrees(headingTrue.value);
 
         let bow = position;
-        if (state.gpsFromBow)
-            bow = geolib.computeDestinationPoint(bow, state.gpsFromBow, headingTrue);
-        if (state.gpsFromCenter)
-            bow = geolib.computeDestinationPoint(bow, state.gpsFromCenter, headingTrue + 90);
+        if (fromBow)
+            bow = geolib.computeDestinationPoint(bow, fromBow, headingTrue);
+        // fromCenter is positive to starboard, so the centreline is to port of it.
+        if (fromCenter)
+            bow = geolib.computeDestinationPoint(bow, Math.abs(fromCenter), headingTrue + (fromCenter > 0 ? -90 : 90));
         return bow;
     }
 
@@ -1317,13 +1340,8 @@ module.exports = (app) => {
             app.setPluginStatus?.(`signalk-racer ${pluginVersion} started`);
             app.debug(`signalk-racer ${pluginVersion} loaded from ${__dirname}`);
 
-            // These offsets are no longer sent, with the position itself being corrected.
-            let fromBow = app.getSelfPath('sensors.gps.fromBow');
-            let fromCenter = app.getSelfPath('sensors.gps.fromCenter');
             state.options = options;
             state.wayPointsScanned = false;
-            state.gpsFromBow = fromBow ? fromBow.value : null;
-            state.gpsFromCenter = fromCenter ? fromCenter.value : null;
             state.timeToStart = options.timer;
             state.startLine = getStartLine();
             publishLineList();

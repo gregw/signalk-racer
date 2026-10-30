@@ -84,7 +84,13 @@ The `startLineStb` and `startLinePort` configurations are used to search resourc
 
 ### Bow position
 
-The GPS position provided is assumed to be the **bow** of the boat.  The offsets should be set in the signalk-server configuration to make this so.   If the offsets are not set correctly, then the consistency in angle when pinging the line ends and approaching to start will compensate.
+Line distances are measured from the **bow**. The bow is found from `navigation.position` using `sensors.gps.fromBow` and `sensors.gps.fromCenter`, which describe where that position is on the hull:
+
+- With the signalk-server GNSS correction set to `replace`, the server corrects `navigation.position` to the Consistent Common Reference Point (CCRP), midships on the centreline, and publishes `fromBow` as half the boat length.
+- With the correction `off` and a single antenna configured, the server publishes that antenna's offsets.
+- If no `fromBow` is published (e.g. several antennas without correction), the position is assumed to be the CCRP, half of `design.length.overall` aft of the bow. Without a length either, the position is used as the bow.
+
+The offsets are read each time they are used, so changes in the server configuration apply straight away. Setting the vessel length and the GNSS antenna offsets in the server is recommended. If they are not right, then pinging the line ends in the same attitude as the boat will cross the line will compensate.
 
 ### Distance to Start Line (`navigation.racing.distanceStartline`)
 
@@ -95,7 +101,7 @@ The GPS position provided is assumed to be the **bow** of the boat.  The offsets
 - Computes the distance from the **bow** of the boat to the configured start line.  
 - For boats within the start zone (defined as with a 45 degree bearing to each end of the line), the perpendicular distance to the line is used.
 - For boats outside of the start zone, the distance parallel to the line to reach the zone is added to their perpendicular distance to the line.
-- Uses `sensors.gps.fromBow` and `sensors.gps.fromCenter` offsets to calculate the actual bow position.
+- Uses the [bow position](#bow-position) rather than the GPS position.
 - The result is:
     - **Negative** when the bow is **over the line (OCS)**
     - **Positive** when the bow is **behind the line**

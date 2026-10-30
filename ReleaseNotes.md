@@ -1,3 +1,13 @@
+## 1.3.7 Bow position from the server's offsets
+ + `sensors.gps.fromBow` and `fromCenter` are read each time the bow is worked out, rather
+   than once when the plugin starts, so offsets the server publishes later (as it now does
+   for its GNSS correction, see #7) are used
+ + Without a published `fromBow`, the position is assumed to be the Consistent Common
+   Reference Point (CCRP), half of `design.length.overall` aft of the bow
+ + Fixed `fromCenter` moving the position the wrong way: it is positive to starboard, so the
+   centreline is to port of it
+ + Updated the README on how the bow position is found
+
 ## 1.3.6 Start timer keeps time
  + `timeToStart` no longer drifts behind `startTime`. The countdown subtracted a second on
    each tick, so every late tick added to the error and on a loaded host it could reach 0
