@@ -9,7 +9,7 @@ const geolib = require('geolib');
 
 const POSITION = {latitude: -33.85, longitude: 151.25};
 
-function startPlugin(selfPaths) {
+function startPlugin(selfPaths, server = {}) {
     const published = {};
     const app = {
         selfId: 'test',
@@ -21,6 +21,7 @@ function startPlugin(selfPaths) {
         registerPutHandler: (context, path, handler) => { app.putHandlers[path] = handler; },
         subscriptionmanager: { subscribe: () => {} },
         resourcesApi: { listResources: () => Promise.resolve({}), setResource: () => Promise.resolve() },
+        ...server,
         handleMessage: (id, delta) => {
             for (const u of delta.updates)
                 for (const v of (u.values || []))
@@ -37,9 +38,9 @@ function startPlugin(selfPaths) {
 }
 
 // Heading north, so forward is north and starboard is east.
-function boat(extra = {}) {
+function boat(extra = {}, source = 'n2k.0') {
     return {
-        'navigation.position': { value: POSITION },
+        'navigation.position': { value: POSITION, $source: source },
         'navigation.headingTrue': { value: 0 },
         ...extra,
     };
@@ -117,6 +118,81 @@ describe('racer bow position', () => {
         const { plugin, ping } = startPlugin(selfPaths);
         selfPaths['sensors.gps.fromBow'] = { value: 3 };
         expect(offset(await ping()).north).toBeCloseTo(3, 1);
+        plugin.stop();
+    });
+
+    // A server with GNSS correction (2.31+), with a GPS antenna 1.5m from the bow and
+    // 0.45m to starboard, on an N2K source referenced either by address or by CAN name.
+    function gnssServer({ version = '2.35.1', mode = 'replace', active = true, fromCenter = 0.45 } = {}) {
+        return {
+            config: {
+                version,
+                settings: {
+                    gnssCorrection: mode,
+                    gnssSensors: [
+                        { sensorId: 'Gps', $source: 'n2k.c07891001cb84fb3', fromBow: 1.5, fromCenter },
+                        { sensorId: 'Vhf', $source: 'n183.AI', fromBow: 4.2, fromCenter: 0.9 },
+                    ],
+                },
+            },
+            deltaCache: { canonicaliseSourceRef: (ref) => ref === 'n2k.0' ? 'n2k.c07891001cb84fb3' : ref },
+            gnssOffsetCorrector: { getStatus: () => ({ mode, active }) },
+        };
+    }
+
+    // Stale offsets from the vessel settings, as servers before 2.35 leave them.
+    const stale = {
+        'sensors.gps.fromBow': { value: 2 },
+        'sensors.gps.fromCenter': { value: 0.2 },
+        'design.length': { value: { overall: 9.54 } },
+    };
+
+    test('replace active: a configured antenna position is at the CCRP, whatever the stale offsets', async () => {
+        const { plugin, ping } = startPlugin(boat(stale), gnssServer({ version: '2.33.0', fromCenter: -0.45 }));
+        const o = offset(await ping());
+        expect(o.north).toBeCloseTo(4.77, 1);
+        expect(o.east).toBeCloseTo(0, 1);
+        plugin.stop();
+    });
+
+    test('both: a .ccrp position is at the CCRP', async () => {
+        const { plugin, ping } = startPlugin(boat(stale, 'Gps.ccrp'), gnssServer({ mode: 'both' }));
+        expect(offset(await ping()).north).toBeCloseTo(4.77, 1);
+        plugin.stop();
+    });
+
+    test('both: an uncorrected antenna position is at that antenna', async () => {
+        const { plugin, ping } = startPlugin(boat(stale), gnssServer({ mode: 'both' }));
+        const o = offset(await ping());
+        expect(o.north).toBeCloseTo(1.5, 1);
+        expect(o.east).toBeCloseTo(-0.45, 1);
+        plugin.stop();
+    });
+
+    test('replace blocked: a configured antenna position is at that antenna', async () => {
+        const { plugin, ping } = startPlugin(boat({
+            'sensors.gps.fromBow': { value: null },
+            'design.length': { value: { overall: 9.54 } },
+        }), gnssServer({ active: false }));
+        const o = offset(await ping());
+        expect(o.north).toBeCloseTo(1.5, 1);
+        expect(o.east).toBeCloseTo(-0.45, 1);
+        plugin.stop();
+    });
+
+    test('before 2.34: an antenna fromCenter is positive to port', async () => {
+        const { plugin, ping } = startPlugin(boat(stale), gnssServer({ version: '2.33.0', mode: 'off', fromCenter: -0.45 }));
+        const o = offset(await ping());
+        expect(o.north).toBeCloseTo(1.5, 1);
+        expect(o.east).toBeCloseTo(-0.45, 1);
+        plugin.stop();
+    });
+
+    test('an unconfigured source falls back to the published offsets', async () => {
+        const { plugin, ping } = startPlugin(boat(stale, 'n183.GP'), gnssServer());
+        const o = offset(await ping());
+        expect(o.north).toBeCloseTo(2, 1);
+        expect(o.east).toBeCloseTo(-0.2, 1);
         plugin.stop();
     });
 });

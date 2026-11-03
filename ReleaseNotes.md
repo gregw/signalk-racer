@@ -1,12 +1,19 @@
 ## 1.3.7 Bow position from the server's offsets
- + `sensors.gps.fromBow` and `fromCenter` are read each time the bow is worked out, rather
-   than once when the plugin starts, so offsets the server publishes later (as it now does
-   for its GNSS correction, see #7) are used
- + Without a published `fromBow`, the position is assumed to be the Consistent Common
-   Reference Point (CCRP), half of `design.length.overall` aft of the bow
+ + The bow is found from where `navigation.position` is on the hull, worked out each time
+   it is used rather than once when the plugin starts (#7):
+   + a position corrected by the server's GNSS correction (2.31+) is at the Consistent
+     Common Reference Point (CCRP), midships on the centreline. Stale GPS offsets in the
+     vessel settings no longer move it by the wrong amount
+   + a position from a configured antenna that is not being corrected is at that antenna,
+     allowing for servers before 2.34 taking From Center as positive to port
+   + otherwise `sensors.gps.fromBow` and `fromCenter` are used, as published by the
+     server (2.35+) or set in the vessel settings
+   + otherwise the position is assumed to be the CCRP, half of `design.length.overall`
+     aft of the bow
  + Fixed `fromCenter` moving the position the wrong way: it is positive to starboard, so the
    centreline is to port of it
- + Updated the README on how the bow position is found
+ + Moved the detailed documentation from the README to the [wiki](https://github.com/gregw/signalk-racer/wiki),
+   including a new page on how the bow position is found
 
 ## 1.3.6 Start timer keeps time
  + `timeToStart` no longer drifts behind `startTime`. The countdown subtracted a second on

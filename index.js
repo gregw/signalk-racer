@@ -451,20 +451,70 @@ module.exports = (app) => {
         return typeof value === 'number' && Number.isFinite(value) ? value : null;
     }
 
-    // Where navigation.position is on the hull. The server publishes sensors.gps.fromBow
-    // and fromCenter for this, whether the position is at an antenna or corrected to the
-    // CCRP (midships on the centreline). They are read each time, as the server can
-    // publish or change them at any time. Without a published fromBow, the position is
-    // assumed to be the CCRP, half the boat's length aft of the bow.
+    function lengthOverall() {
+        const length = app.getSelfPath('design.length')?.value;
+        const overall = typeof length === 'number' ? length : length?.overall;
+        return typeof overall === 'number' && Number.isFinite(overall) && overall > 0 ? overall : null;
+    }
+
+    // Servers before 2.34 took a GNSS antenna's fromCenter as positive to port.
+    function antennaFromCenterIsPortPositive() {
+        const [major, minor] = String(app.config?.version ?? '').split('.').map(Number);
+        return Number.isFinite(major) && Number.isFinite(minor) && (major < 2 || major === 2 && minor < 34);
+    }
+
+    // The server's GNSS antenna configuration (2.31+) for the source of a position.
+    // Sources are compared in canonical form, as an N2K source can be referenced by
+    // either its address or its CAN name.
+    function configuredAntenna(source) {
+        const antennas = app.config?.settings?.gnssSensors;
+        if (!Array.isArray(antennas))
+            return null;
+        const canonical = (ref) => app.deltaCache?.canonicaliseSourceRef?.(ref) ?? ref;
+        const ref = canonical(source);
+        const antenna = antennas.find(a => a?.$source && (a.$source === source || canonical(a.$source) === ref));
+        if (!antenna || typeof antenna.fromBow !== 'number' || !Number.isFinite(antenna.fromBow))
+            return null;
+        let fromCenter = Number.isFinite(antenna.fromCenter) ? antenna.fromCenter : 0;
+        if (antennaFromCenterIsPortPositive())
+            fromCenter = -fromCenter;
+        return {fromBow: antenna.fromBow, fromCenter};
+    }
+
+    // Where navigation.position is on the hull, as fromBow and fromCenter (positive to
+    // starboard). Worked out each time, as the server configuration can change at any
+    // time:
+    //  1. A position corrected by the server is at the Consistent Common Reference Point
+    //     (CCRP): midships on the centreline. It is either from a '.ccrp' source (the
+    //     'both' correction mode) or from a configured antenna while 'replace' is active.
+    //  2. A position from a configured antenna that is not being corrected is at that
+    //     antenna.
+    //  3. Otherwise sensors.gps.fromBow and fromCenter, as published by the server
+    //     (2.35+) or set in the vessel settings.
+    //  4. Otherwise the position is assumed to be the CCRP.
+    // The server internals used for 1 and 2 are not part of the plugin API, so anything
+    // missing falls through to 3.
     function positionOffsets() {
-        let fromBow = selfNumber('sensors.gps.fromBow');
-        if (fromBow == null) {
-            const length = app.getSelfPath('design.length')?.value;
-            const overall = typeof length === 'number' ? length : length?.overall;
-            if (typeof overall === 'number' && overall > 0)
-                fromBow = overall / 2;
+        const length = lengthOverall();
+        const ccrp = length ? {fromBow: length / 2, fromCenter: 0} : null;
+        const source = app.getSelfPath('navigation.position')?.$source;
+        if (typeof source === 'string') {
+            if (source.endsWith('.ccrp') && ccrp)
+                return ccrp;
+            const antenna = configuredAntenna(source);
+            if (antenna) {
+                const status = app.gnssOffsetCorrector?.getStatus?.();
+                if (status?.mode === 'replace' && status.active && ccrp)
+                    return ccrp;
+                return antenna;
+            }
         }
-        return {fromBow, fromCenter: selfNumber('sensors.gps.fromCenter')};
+
+        const fromBow = selfNumber('sensors.gps.fromBow');
+        const fromCenter = selfNumber('sensors.gps.fromCenter');
+        if (fromBow != null || fromCenter != null)
+            return {fromBow, fromCenter};
+        return ccrp ?? {fromBow: null, fromCenter: null};
     }
 
     function bowPosition(position) {
