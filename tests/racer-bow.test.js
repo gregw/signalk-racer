@@ -113,6 +113,40 @@ describe('racer bow position', () => {
         plugin.stop();
     });
 
+    test('null heading: falls back to the course over ground', async () => {
+        const { plugin, ping } = startPlugin(boat({
+            'navigation.headingTrue': { value: null },
+            'navigation.courseOverGroundTrue': { value: Math.PI / 2 },
+            'sensors.gps.fromBow': { value: 5 },
+        }));
+        const o = offset(await ping());
+        expect(o.north).toBeCloseTo(0, 1);
+        expect(o.east).toBeCloseTo(5, 1);
+        plugin.stop();
+    });
+
+    test('null heading and course over ground: the position is used as the bow', async () => {
+        const { plugin, ping } = startPlugin(boat({
+            'navigation.headingTrue': { value: null },
+            'navigation.courseOverGroundTrue': { value: null },
+            'sensors.gps.fromBow': { value: 5 },
+        }));
+        expect(await ping()).toEqual(POSITION);
+        plugin.stop();
+    });
+
+    test('non-finite heading: falls back to the course over ground', async () => {
+        const { plugin, ping } = startPlugin(boat({
+            'navigation.headingTrue': { value: Infinity },
+            'navigation.courseOverGroundTrue': { value: Math.PI },
+            'sensors.gps.fromBow': { value: 5 },
+        }));
+        const o = offset(await ping());
+        expect(o.north).toBeCloseTo(-5, 1);
+        expect(o.east).toBeCloseTo(0, 1);
+        plugin.stop();
+    });
+
     test('offsets published after the plugin starts are used', async () => {
         const selfPaths = boat();
         const { plugin, ping } = startPlugin(selfPaths);

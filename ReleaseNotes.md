@@ -1,3 +1,9 @@
+## 1.3.8 Bow position without a heading
+ + Fixed the bow being placed north of the position when the heading drops out. The server
+   keeps `navigation.headingTrue` with a null value, so the course over ground was never
+   used. The heading, or else the course over ground, is now chosen on its value, and a
+   non-finite value is ignored
+
 ## 1.3.7 Bow position from the server's offsets
  + The bow is found from where `navigation.position` is on the hull, worked out each time
    it is used rather than once when the plugin starts (#7):

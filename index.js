@@ -518,14 +518,13 @@ module.exports = (app) => {
     }
 
     function bowPosition(position) {
-        let headingTrue = app.getSelfPath("navigation.headingTrue");
-        if (!headingTrue)
-            headingTrue = app.getSelfPath("navigation.courseOverGroundTrue");
+        // Chosen on the values, as a heading that has dropped out stays with a null value.
+        const heading = selfNumber('navigation.headingTrue') ?? selfNumber('navigation.courseOverGroundTrue');
         const {fromBow, fromCenter} = positionOffsets();
-        if (!headingTrue || (!fromBow && !fromCenter))
-            return position
+        if (heading == null || (!fromBow && !fromCenter))
+            return position;
 
-        headingTrue = toDegrees(headingTrue.value);
+        const headingTrue = toDegrees(heading);
 
         let bow = position;
         if (fromBow)
