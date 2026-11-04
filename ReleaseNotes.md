@@ -12,6 +12,8 @@
      aft of the bow
  + Fixed `fromCenter` moving the position the wrong way: it is positive to starboard, so the
    centreline is to port of it
+ + A ping to a line end that hasn't moved now succeeds. It returned 304, which the server
+   turned into a 502, so clients saw a failure for a ping that had done what was asked
  + Moved the detailed documentation from the README to the [wiki](https://github.com/gregw/signalk-racer/wiki),
    including a new page on how the bow position is found
 
