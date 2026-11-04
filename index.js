@@ -653,7 +653,8 @@ module.exports = (app) => {
             if (startLine) {
                 // We have a line, check if this end is the same?
                 if (startLine[end].latitude === position.latitude && startLine[end].longitude === position.longitude) {
-                    return complete(callback, 304, 'Put start line end: unchanged line end');
+                    // Already there, which is what was asked for.
+                    return complete(callback, 200, 'Put start line end: unchanged line end');
                 }
 
                 app.debug('update existing start line');
@@ -666,7 +667,7 @@ module.exports = (app) => {
                 const thisEnd = app.getSelfPath(`navigation.racing.startLine${camelCase(end)}`);
                 app.debug('thisEnd ', JSON.stringify(thisEnd));
                 if (thisEnd && thisEnd.value && thisEnd.value.latitude === position.latitude && thisEnd.value.longitude === position.longitude) {
-                    return complete(callback, 304, 'Put start line end: unchanged end');
+                    return complete(callback, 200, 'Put start line end: unchanged end');
                 }
 
                 // If we now have both ends, we have a line!
