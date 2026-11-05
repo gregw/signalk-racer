@@ -92,7 +92,7 @@
             <th>Heading</th>
             <th>Length nm</th>
             <th>TWA</th>
-            <th class="cur">Current</th>
+            <th class="cur">Set</th>
         </tr>
         </thead>
         <tbody id="rows"></tbody>
@@ -107,11 +107,12 @@
 
 <div class="note">
     Bearings are true. <b>BTW/DTW</b>: bearing and distance from the boat to each point.
-    <b>Leg heading/length</b>: from the previous point of the course. <b>TWA</b> is for the leg in
-    the current true wind direction, assuming it holds: green to starboard, red to port. On the
-    point being sailed to, the TWA on the bearing from here is shown beneath. <b>Current</b>, when
-    known, is an arrow relative to the leg: up with it, down against it, sideways across it, and
-    thicker the stronger it is. The next point is
+    <b>Leg heading/length</b>: from the previous point of the course. <b>TWA</b> and <b>Set</b> are
+    the wind and current measured on the boat now, projected onto every leg as if they hold for the
+    whole course: they are not a forecast (no GRIBs or tidal predictions are used). <b>TWA</b>: green
+    to starboard, red to port; on the point being sailed to, the TWA on the bearing from here is
+    shown beneath. <b>Set</b>, when the current is known, is an arrow relative to the leg: up with
+    it, down against it, sideways across it, thicker the stronger it is, with its drift over it. The next point is
     highlighted. BTW/DTW published by the server's Course API or a plotter over NMEA are shown
     below the table. A waypoint moved since the route was made is flagged: the route keeps its own
     copy of the position, which is what is shown and navigated to.
