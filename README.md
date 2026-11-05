@@ -2,13 +2,19 @@
 
 This plugin adds sail racing relevant data to a Signal K server. It focuses on real-time information useful during the start of a race, such as:
  + A server side race timer that can be displayed on multiple screens and be finely adjusted
+   ([read more](https://github.com/gregw/signalk-racer/wiki/API))
  + A mechanism to set and adjust the start line using waypoints and REST commands
- + Calculation of the distance, time to line and time to burn, from the bow
- + Calculation of the TWA for the next leg of the course.
+   ([read more](https://github.com/gregw/signalk-racer/wiki/API))
+ + Calculation of the distance, time to line and time to burn, from the
+   [bow](https://github.com/gregw/signalk-racer/wiki/Bow-position) ([read more](https://github.com/gregw/signalk-racer/wiki/Algorithms))
+ + Best and effective VMGs for the time to line, from recent sailing and, when available, the
+   boat's polars ([read more](https://github.com/gregw/signalk-racer/wiki/VMG))
+ + Calculation of the TWA for the next leg of the course ([read more](https://github.com/gregw/signalk-racer/wiki/Signal-K-Paths))
 
 These values can be displayed in Skip/KIP widgets, Freeboard-SK, or other Signal K clients.
 There are dedicated widgets for the start timer and line in Skip, and in KIP since 3.5.0.
-There is also a webapp to adjust the line, visualise the approach to the line, adjust VMGs, and configure the timer.
+There is also a webapp to adjust the line, visualise the approach to the line, adjust VMGs, and configure the timer
+([read more](https://github.com/gregw/signalk-racer/wiki/Webapp)). See [Skip Widgets](https://github.com/gregw/signalk-racer/wiki/Skip-Widgets) for how to read the line view.
 
 ![Skip and Freeboard Screenshot](https://raw.githubusercontent.com/gregw/signalk-racer/signalk-racer-1.3.5/images/racer-skip.png)
 
@@ -21,6 +27,7 @@ There is also a webapp to adjust the line, visualise the approach to the line, a
 Install `signalk-racer` from the Signal K server's Appstore, then enable and configure it under
 Server → Plugin Config. The start line is taken from two waypoints, by default named `startBoat`
 and `startPin`, which can be set from Freeboard-SK or by "pinging" the ends from the widgets.
+See [Configuration](https://github.com/gregw/signalk-racer/wiki/Configuration) for all the options.
 
 ---
 
@@ -77,8 +84,9 @@ The details are in the [wiki](https://github.com/gregw/signalk-racer/wiki):
 - [Signal K Paths](https://github.com/gregw/signalk-racer/wiki/Signal-K-Paths) published by the plugin
 - [Configuration](https://github.com/gregw/signalk-racer/wiki/Configuration) parameters
 - [Algorithms](https://github.com/gregw/signalk-racer/wiki/Algorithms) for the line, distance, time to line and time to burn
+- [VMG](https://github.com/gregw/signalk-racer/wiki/VMG): how the best and effective VMGs are worked out, with and without polars
 - [Bow position](https://github.com/gregw/signalk-racer/wiki/Bow-position) and the server's GNSS (CCRP) correction
-- [Webapp](https://github.com/gregw/signalk-racer/wiki/Webapp) start line visualisation
+- [Webapp](https://github.com/gregw/signalk-racer/wiki/Webapp) start line visualisation and VMG detail page
 - [Skip Widgets](https://github.com/gregw/signalk-racer/wiki/Skip-Widgets)
 - [API](https://github.com/gregw/signalk-racer/wiki/API) for setting the line, timer and VMGs
 - [Development](https://github.com/gregw/signalk-racer/wiki/Development) and [Releasing](https://github.com/gregw/signalk-racer/wiki/Releasing)
