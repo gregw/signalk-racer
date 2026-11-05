@@ -1,6 +1,9 @@
 module.exports = (app) => {
     const state = {
         startLineName: null,
+        // False once the line has been deactivated: no line is looked for or published
+        // until one is selected again or an end of it is set.
+        lineActive: true,
         startLine: null,
         // Last published best VMGs, so we only send deltas when they actually change.
         publishedBestVmg: {toCourseSide: null, fromCourseSide: null, toPortEnd: null, toStbEnd: null},
@@ -396,6 +399,19 @@ module.exports = (app) => {
             sendDeltas(deltas);
     }
 
+    // Clear the effective VMGs, which are only meaningful while the line is in play.
+    function clearEffectiveVmg() {
+        const deltas = [];
+        for (const leg of ['toLine', 'alongLine']) {
+            if (state.publishedEffectiveVmg[leg] !== null) {
+                state.publishedEffectiveVmg[leg] = null;
+                deltas.push({path: `navigation.racing.effectiveVmg.${leg}`, value: null});
+            }
+        }
+        if (deltas.length > 0)
+            sendDeltas(deltas);
+    }
+
     function samePosition(a, b) {
         return !!a && !!b && a.latitude === b.latitude && a.longitude === b.longitude;
     }
@@ -552,6 +568,7 @@ module.exports = (app) => {
             // Stamped so a client can tell which build of the plugin is actually running.
             pluginVersion,
             startLineName: state.startLineName ?? null,
+            active: state.lineActive,
             lines: lines.map(l => ({
                 startLineName: l.startLineName,
                 startLineDescription: l.startLineDescription || null
@@ -648,6 +665,12 @@ module.exports = (app) => {
             if (end !== 'port' && end !== 'stb')
                 return complete(callback, 400, 'Failed to put start line end: unknown end');
 
+            // Setting an end is setting up a line, so a deactivated line comes back.
+            if (!state.lineActive) {
+                state.lineActive = true;
+                publishLineList();
+            }
+
             let startLine = state.startLine;
             if (startLine) {
                 // We have a line, check if this end is the same?
@@ -713,19 +736,32 @@ module.exports = (app) => {
         }
     }
 
+    // Select a line by name (null or empty for the default line), or with active false
+    // deactivate the line. Active true without a name reactivates the selected line.
     async function setStartLineName(context, path, args, callback) {
         try {
             app.debug('setStartLineName:', JSON.stringify(args));
-            if (!args || args.startLineName != null && typeof args.startLineName !== 'string') {
+            if (!args || typeof args !== 'object'
+                || args.startLineName != null && typeof args.startLineName !== 'string'
+                || args.active != null && typeof args.active !== 'boolean') {
                 return complete(callback, 400, 'Failed to set the startLine name!');
             }
-            if (state.startLineName !== args.startLineName) {
-                state.startLineName = args.startLineName;
+            const named = args.active == null || Object.hasOwn(args, 'startLineName');
+            const name = named ? (args.startLineName || null) : state.startLineName;
+            const active = args.active ?? true;
+
+            if (!active) {
+                state.startLineName = name;
+                if (state.lineActive)
+                    deactivateLine();
+            } else if (!state.lineActive || state.startLineName !== name) {
+                state.lineActive = true;
+                state.startLineName = name;
                 state.startLine = null;
                 findLineAndThenProcess(null, true);
             }
             publishLineList();
-            return complete(callback, 200, 'Put start line name: OK');
+            return complete(callback, 200, active ? 'Put start line name: OK' : 'Deactivate start line: OK');
         } catch (err) {
             return complete(callback, 500, 'Put start line name: Failed ' + err);
         }
@@ -1049,12 +1085,32 @@ module.exports = (app) => {
         }
     }
 
+    // Stop using the line: its ends and everything worked out from it are cleared, but
+    // the waypoints are left alone, so it can be selected again.
+    function deactivateLine() {
+        app.debug('deactivateLine');
+        state.lineActive = false;
+        state.startLine = null;
+        sendDeltas([
+            {path: 'navigation.racing.startLinePort', value: null},
+            {path: 'navigation.racing.startLineStb', value: null},
+            {path: 'navigation.racing.startLineLength', value: null},
+            {path: 'navigation.racing.startLineBearing', value: null},
+        ]);
+        clearLineDeltas(true);
+    }
+
     function findLineAndThenProcess(position, alwaysFindLine = false) {
+        if (!state.lineActive)
+            return;
         if (!state.startLine || alwaysFindLine) {
             app.resourcesApi.listResources(
                 'waypoints',
                 {}
             ).then(data => {
+                // Deactivated while the waypoints were being listed.
+                if (!state.lineActive)
+                    return;
                 state.wayPointsScanned = true;
 
                 const startLine = {
@@ -1222,8 +1278,8 @@ module.exports = (app) => {
         }
     }
 
-    function clearLineDeltas() {
-        if (state.distanceToLine == null)
+    function clearLineDeltas(force = false) {
+        if (state.distanceToLine == null && !force)
             return;
         state.distanceToLine = null;
         sendDeltas([
@@ -1233,6 +1289,7 @@ module.exports = (app) => {
             {path: 'navigation.racing.timeToBurn', value: null},
         ]);
         publishBestVmg();
+        clearEffectiveVmg();
     }
 
     function processWind(twd) {
@@ -1391,6 +1448,7 @@ module.exports = (app) => {
             app.debug(`signalk-racer ${pluginVersion} loaded from ${__dirname}`);
 
             state.options = options;
+            state.lineActive = true;
             state.wayPointsScanned = false;
             state.timeToStart = options.timer;
             state.startLine = getStartLine();

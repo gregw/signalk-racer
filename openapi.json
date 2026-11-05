@@ -176,8 +176,8 @@
 
     "/signalk/v1/api/vessels/self/navigation/racing/setStartLineName": {
       "put": {
-        "summary": "Select a named start line to use",
-        "description": "Set the active start line by name, or set null to revert to the default line.",
+        "summary": "Select a named start line to use, or deactivate the line",
+        "description": "Set the active start line by name, or set null to revert to the default line. With active false the line is deactivated: its ends and everything worked out from it are published as null, and it is not looked for again until a line is selected or an end of it is set. The waypoints are left as they are. Active true without a startLineName reactivates the line that was selected.",
         "requestBody": {
           "required": true,
           "content": {
@@ -189,19 +189,23 @@
                     "type": "string",
                     "nullable": true,
                     "description": "Line name to activate, or null to use the default"
+                  },
+                  "active": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "False to deactivate the line; true (or omitted) to make the selected line active"
                   }
-                },
-                "required": ["startLineName"]
+                }
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Active line updated"
+            "description": "Active line updated, or the line deactivated"
           },
           "400": {
-            "description": "Invalid line name (not found)"
+            "description": "Invalid startLineName or active"
           }
         }
       }

@@ -1,3 +1,13 @@
+## 1.3.9 Deactivate the line
+ + The line can be deactivated with `{"active": false}` to `navigation.racing.setStartLineName`,
+   so a line from an earlier race stops being drawn and calculated (#5). Its ends and
+   everything worked out from it are published as null; its waypoints are kept. Selecting a
+   line, `{"active": true}`, or setting an end of the line makes it active again
+ + `navigation.racing.lines` now says whether the line is `active`
+ + The webapp's line selector has a "No line" choice, and follows a line selected or
+   deactivated elsewhere
+ + The effective VMGs are cleared with the other line values when the line goes out of play
+
 ## 1.3.8 Bow position without a heading
  + Fixed the bow being placed north of the position when the heading drops out. The server
    keeps `navigation.headingTrue` with a null value, so the course over ground was never

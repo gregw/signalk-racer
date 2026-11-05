@@ -269,6 +269,11 @@
                                     nav.lineBearing = value.value;
                                     scheduleRender();
                                     break;
+                                case "navigation.racing.lines":
+                                    // Follows a line selected, or deactivated, elsewhere.
+                                    if (value.value)
+                                        showStartLines(value.value);
+                                    break;
                                 case "navigation.racing.startLinePort":
                                     nav.port = value.value;
                                     scheduleRender();
@@ -512,6 +517,9 @@
         updateStatus('Sent request to reset the best VMGs');
     }
 
+    // Select value standing for "no line": the line is deactivated, not a line named this.
+    const NO_LINE = '\u0000none';
+
     function loadStartLines() {
         const url = window.location.origin +
             '/signalk/v1/api/vessels/self/navigation/racing/lines';
@@ -524,48 +532,9 @@
                 return res.json();
             })
             .then(data => {
-                const select = document.getElementById('startLineSelect');
-                if (!select) return;
-
-                // Clear existing options
-                select.innerHTML = '';
-
-                // Default option = "no named line"
-                const defaultOpt = document.createElement('option');
-                defaultOpt.value = '';
-                defaultOpt.textContent = 'Default line';
-                select.appendChild(defaultOpt);
-
                 const payload = data && data.value ? data.value : { lines: [], startLineName: null };
-                if (Array.isArray(payload.lines)) {
-                    payload.lines.forEach(line => {
-                        const opt = document.createElement('option');
-                        opt.value = line.startLineName;
-                        opt.textContent = line.startLineDescription
-                            ? `${line.startLineName} – ${line.startLineDescription}`
-                            : line.startLineName;
-                        select.appendChild(opt);
-                    });
-                }
-
-                // Preselect active
-                if (!payload.startLineName) {
-                    select.value = '';
-                } else {
-                    select.value = payload.startLineName;
-                    if (select.value !== payload.startLineName) {
-                        // In case active name not in the list
-                        select.value = '';
-                    }
-                }
-
-                const version = document.getElementById('pluginVersion');
-                if (version)
-                    version.textContent = payload.pluginVersion
-                        ? `signalk-racer ${payload.pluginVersion}`
-                        : 'signalk-racer (version not reported)';
-
-                updateStatus('Loaded start lines: ' + payload.lines.length + ' lines');
+                showStartLines(payload);
+                updateStatus('Loaded start lines: ' + (payload.lines || []).length + ' lines');
             })
             .catch(err => {
                 console.error('Failed to load start lines:', err);
@@ -573,14 +542,65 @@
             });
     }
 
+    function showStartLines(payload) {
+        const select = document.getElementById('startLineSelect');
+        if (!select) return;
+
+        // Clear existing options
+        select.innerHTML = '';
+
+        // Deactivates the line, so it is neither drawn nor calculated
+        const noLineOpt = document.createElement('option');
+        noLineOpt.value = NO_LINE;
+        noLineOpt.textContent = 'No line';
+        select.appendChild(noLineOpt);
+
+        // Default option = "no named line"
+        const defaultOpt = document.createElement('option');
+        defaultOpt.value = '';
+        defaultOpt.textContent = 'Default line';
+        select.appendChild(defaultOpt);
+
+        if (Array.isArray(payload.lines)) {
+            payload.lines.forEach(line => {
+                const opt = document.createElement('option');
+                opt.value = line.startLineName;
+                opt.textContent = line.startLineDescription
+                    ? `${line.startLineName} – ${line.startLineDescription}`
+                    : line.startLineName;
+                select.appendChild(opt);
+            });
+        }
+
+        // Preselect active
+        if (payload.active === false) {
+            select.value = NO_LINE;
+        } else if (!payload.startLineName) {
+            select.value = '';
+        } else {
+            select.value = payload.startLineName;
+            if (select.value !== payload.startLineName) {
+                // In case active name not in the list
+                select.value = '';
+            }
+        }
+
+        const version = document.getElementById('pluginVersion');
+        if (version)
+            version.textContent = payload.pluginVersion
+                ? `signalk-racer ${payload.pluginVersion}`
+                : 'signalk-racer (version not reported)';
+    }
+
     function setStartLineName(startLineName) {
         const url = window.location.origin +
             '/signalk/v1/api/vessels/self/navigation/racing/setStartLineName';
 
+        const deactivate = startLineName === NO_LINE;
         const body = {
-            value: {
-                startLineName: startLineName === '' ? null : startLineName
-            }
+            value: deactivate
+                ? {active: false}
+                : {startLineName: startLineName === '' ? null : startLineName}
         };
 
         fetch(url, {
@@ -596,8 +616,8 @@
             })
             .then(() => {
                 updateStatus(
-                    startLineName
-                        ? `Active line set to: ${startLineName}`
+                    deactivate ? 'Line deactivated'
+                        : startLineName ? `Active line set to: ${startLineName}`
                         : 'Active line set to Default'
                 );
             })
