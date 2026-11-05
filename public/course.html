@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<!-- public/course.html: a row for every point of the course, with the legs between them. -->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SignalK Racer Course</title>
+    <style>
+        body {
+            background-color: black;
+            color: white;
+            font-family: sans-serif;
+            /* Everything is sized in em from here, so the page scales with its width:
+               about 19px on a phone, 32px at 1000px, up to 48px on a large screen. */
+            font-size: clamp(18px, 12px + 2vw, 48px);
+            margin: 1em auto;
+            padding: 0 16px;
+            max-width: 2200px;
+        }
+        a { color: #8cf; }
+        h1 { font-size: 1.2em; margin: 0 0 0.5em; display: flex; justify-content: space-between; align-items: baseline; }
+
+        .bar { display: flex; flex-wrap: wrap; gap: 0.5em 1.5em; align-items: center; margin-bottom: 0.6em; font-size: 0.9em; }
+        .bar .label { color: #aaa; }
+        select { font-size: 1em; padding: 0.2em; background: #222; color: white; border: 1px solid #444; border-radius: 4px; }
+        .big { font-family: monospace; font-weight: bold; font-size: 1.2em; }
+
+        .scroll { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
+        th { color: #aaa; font-weight: normal; font-size: 0.8em; text-align: right; padding: 0.3em 0.5em; border-bottom: 1px solid #333; white-space: nowrap; }
+        th.l, td.l { text-align: left; }
+        td { padding: 0.35em 0.5em; text-align: right; font-family: monospace; white-space: nowrap; border-bottom: 1px solid #1a1a1a; }
+        /* Names wrap rather than widen the table. */
+        td.name { font-family: sans-serif; white-space: normal; }
+        th.group { text-align: center; border-bottom: none; color: #777; }
+
+        /* The point number and name stay in view when the table scrolls sideways. */
+        .c0, .c1 { position: sticky; background: black; z-index: 1; }
+        .c0 { left: 0; width: 2.2em; min-width: 2.2em; box-sizing: border-box; padding-left: 0.3em; padding-right: 0.3em; }
+        .c1 { left: 2.2em; max-width: 9em; border-right: 1px solid #333; }
+
+        tr.passed td { color: #555; }
+        tr.next td { background: #2a2200; color: #fc3; font-weight: bold; }
+        .published { display: block; font-size: 0.8em; color: #8cf; font-weight: normal; }
+        .moved { color: #f88; font-size: 0.8em; font-family: sans-serif; display: block; }
+        .stb { color: #6c6; }
+        .port { color: #f66; }
+        .sail { color: #888; font-size: 0.8em; }
+
+        /* The current arrow, with its speed lightly over it. Only shown when it is known. */
+        .cur { display: none; text-align: center; }
+        table.has-current .cur { display: table-cell; }
+        .arrow { position: relative; display: inline-block; width: 2em; height: 2em; vertical-align: middle; }
+        .arrow svg { width: 100%; height: 100%; }
+        .arrow b { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+                   font-size: 0.7em; color: white; opacity: 0.75; text-shadow: 0 0 3px black; }
+
+        .panel { margin-top: 1em; background: #111; border: 1px solid #333; border-radius: 6px; padding: 0.6em 0.7em; font-size: 0.9em; }
+        .panel h2 { font-size: 0.85em; color: #aaa; font-weight: normal; margin: 0 0 0.3em; }
+        .dim { color: #666; }
+        #status { margin-top: 0.8em; font-size: 0.85em; color: #f88; text-align: center; min-height: 1.2em; }
+        .note { font-size: 0.75em; color: #777; margin-top: 0.8em; line-height: 1.4; }
+    </style>
+</head>
+<body>
+
+<h1>
+    <span>Course review</span>
+    <span style="font-size:0.7em"><a href="start.html">Start</a> &middot; <a href="vmg.html">VMG</a> &middot; <a href="index.html">Racer</a></span>
+</h1>
+
+<div class="bar">
+    <span><span class="label">Route</span> <select id="route" onchange="selectRoute(this.value)"></select></span>
+    <span id="routeState" class="label"></span>
+    <span><span class="label">Remaining</span> <span id="remaining" class="big">--</span></span>
+    <span><span class="label">TWD / TWS</span> <span id="wind" class="big">--</span></span>
+</div>
+
+<div class="scroll">
+    <table>
+        <thead>
+        <tr>
+            <th class="c0"></th><th class="c1"></th>
+            <th class="group" colspan="2">From here</th>
+            <th class="group legs" colspan="3">Leg from previous point</th>
+        </tr>
+        <tr>
+            <th class="l c0">#</th>
+            <th class="l c1">Waypoint</th>
+            <th>BTW</th>
+            <th>DTW nm</th>
+            <th>Heading</th>
+            <th>Length nm</th>
+            <th>TWA</th>
+            <th class="cur">Current</th>
+        </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+    </table>
+</div>
+
+<div class="panel" id="nextLeg"></div>
+
+<div class="panel" id="published"></div>
+
+<div id="status"></div>
+
+<div class="note">
+    Bearings are true. <b>BTW/DTW</b>: bearing and distance from the boat to each point.
+    <b>Leg heading/length</b>: from the previous point of the course. <b>TWA</b> is for the leg in
+    the current true wind direction, assuming it holds: green to starboard, red to port. On the
+    point being sailed to, the TWA on the bearing from here is shown beneath. <b>Current</b>, when
+    known, is an arrow relative to the leg: up with it, down against it, sideways across it, and
+    thicker the stronger it is. The next point is
+    highlighted. BTW/DTW published by the server's Course API or a plotter over NMEA are shown
+    below the table. A waypoint moved since the route was made is flagged: the route keeps its own
+    copy of the position, which is what is shown and navigated to.
+</div>
+
+<script>
+    const NM = 1852;
+    let selected = null; // null follows the active route
+    let lastRoutes = '';
+
+    const deg = (v) => v == null ? '--' : String(Math.round((v % 360 + 360) % 360)).padStart(3, '0') + '°';
+    const rad2deg = (v) => v == null ? null : v * 180 / Math.PI;
+    const dist = (m) => m == null ? '--' : m < NM ? Math.round(m) + ' m' : (m / NM).toFixed(2) + ' nm';
+    // Distances in the table are always in nm, with the unit in the header, to keep it narrow.
+    const nm = (m) => m == null ? '--' : (m / NM).toFixed(m < 10 * NM ? 2 : 1);
+    const kn = (v) => v == null ? '--' : (v / 0.514444).toFixed(1) + ' kn';
+
+    function twa(v) {
+        if (v == null) return '--';
+        const a = Math.round(Math.abs(v));
+        const side = v >= 0 ? '<span class="stb">S</span>' : '<span class="port">P</span>';
+        const sail = a < 60 ? 'beat' : a < 120 ? 'reach' : 'run';
+        return `${a}° ${side} <span class="sail">${sail}</span>`;
+    }
+
+    // The current relative to a leg, as a blue arrow: up when it is with the leg, down when
+    // against it, sideways when across it. Thicker for a stronger current, with its speed
+    // lightly over the arrow. The point being sailed to uses the bearing from here.
+    function currentArrow(current, row) {
+        if (!current) return '';
+        const heading = row.legHeading ?? (row.status === 'next' ? row.btw : null);
+        if (heading == null) return '<span class="dim">--</span>';
+        const relative = rad2deg(current.set) - heading;
+        const knots = current.drift / 0.514444;
+        const width = Math.min(1.5 + knots * 2.5, 9);
+        return `<span class="arrow" title="Set ${deg(rad2deg(current.set))}, drift ${knots.toFixed(1)} kn">
+            <svg viewBox="-20 -20 40 40"><g transform="rotate(${relative.toFixed(0)})">
+                <line x1="0" y1="14" x2="0" y2="-6" stroke="#39f" stroke-width="${width.toFixed(1)}" stroke-linecap="round"/>
+                <path d="M -${(6 + width).toFixed(1)} -4 L 0 -17 L ${(6 + width).toFixed(1)} -4 Z" fill="#39f"/>
+            </g></svg><b>${knots.toFixed(1)}</b></span>`;
+    }
+
+    function selectRoute(id) {
+        selected = id === '' ? null : id;
+        poll();
+    }
+
+    function renderRoutes(data) {
+        const key = JSON.stringify([data.routes, data.activeId, selected]);
+        if (key === lastRoutes) return;
+        lastRoutes = key;
+        const select = document.getElementById('route');
+        select.innerHTML = '';
+        const follow = document.createElement('option');
+        follow.value = '';
+        follow.textContent = data.activeId ? 'Active route' : 'Active route (none)';
+        select.appendChild(follow);
+        for (const r of data.routes) {
+            const o = document.createElement('option');
+            o.value = r.id;
+            o.textContent = r.name + (r.id === data.activeId ? ' (active)' : '');
+            select.appendChild(o);
+        }
+        select.value = selected ?? '';
+    }
+
+    function render(data) {
+        renderRoutes(data);
+        document.getElementById('wind').textContent =
+            data.twd == null ? '--' : `${deg(rad2deg(data.twd))} / ${kn(data.tws)}`;
+
+        const route = data.route;
+        const tbody = document.getElementById('rows');
+        document.querySelector('table').classList.toggle('has-current', !!data.current);
+        if (!route) {
+            document.getElementById('routeState').textContent = data.nextPoint.length ? 'no route: published next point below' : 'no route';
+            document.getElementById('remaining').textContent = '--';
+            tbody.innerHTML = '';
+        } else {
+            const next = route.rows.find(r => r.status === 'next');
+            document.getElementById('routeState').textContent = route.active
+                ? `to point ${next ? next.index + 1 : '?'} of ${route.rows.length}${route.reverse ? ', reversed' : ''}`
+                : 'not active';
+            document.getElementById('remaining').textContent = dist(route.remaining);
+            tbody.innerHTML = route.rows.map(r => `
+                <tr class="${r.status ?? ''}">
+                    <td class="l c0">${r.index + 1}</td>
+                    <td class="l name c1">${r.name ?? '<span class="dim">unnamed</span>'}${r.moved != null ? `<span class="moved">waypoint moved ${dist(r.moved)}</span>` : ''}</td>
+                    <td>${deg(r.btw)}</td>
+                    <td>${nm(r.dtw)}</td>
+                    <td>${deg(r.legHeading)}</td>
+                    <td>${nm(r.legLength)}</td>
+                    <td>${twa(r.legTwa)}${r.btwTwa != null ? `<span class="published">${twa(r.btwTwa)}</span>` : ''}</td>
+                    <td class="cur">${currentArrow(data.current, r)}</td>
+                </tr>`).join('');
+        }
+
+        // The next leg as published by the plugin (navigation.racing.nextLegHeading and
+        // nextLegTrueWindAngle): the leg after the point being sailed to.
+        const after = route?.active ? route.rows.find(r => r.status === 'next') : null;
+        const afterRow = after ? route.rows[after.index + 1] : null;
+        document.getElementById('nextLeg').innerHTML =
+            '<h2>Next leg, as published by the plugin' +
+            (afterRow ? ` (row ${afterRow.index + 1}, the leg after the point being sailed to)` : '') + '</h2>' +
+            `<div>Heading ${deg(rad2deg(data.nextLeg.heading))}, TWA ${twa(rad2deg(data.nextLeg.twa))}</div>`;
+
+        const published = document.getElementById('published');
+        published.innerHTML = '<h2>Next point, as published by the Course API or over NMEA</h2>' + (data.nextPoint.length
+            ? data.nextPoint.map(p => `<div><b>${p.label}</b>: BTW ${deg(rad2deg(p.bearing))}, DTW ${dist(p.distance)}
+                ${p.bearing != null && data.twd != null ? `, TWA ${twa(((rad2deg(data.twd) - rad2deg(p.bearing)) % 360 + 540) % 360 - 180)}` : ''}
+                <span class="dim">(${p.source ?? 'unknown source'})</span></div>`).join('')
+            : '<span class="dim">none</span>') +
+            `<div class="dim" style="font-size:0.8em;margin-top:0.4em">signalk-racer ${data.pluginVersion}</div>`;
+    }
+
+    async function poll() {
+        try {
+            const query = selected ? '?route=' + encodeURIComponent(selected) : '';
+            const res = await fetch('/plugins/signalk-racer/course' + query, {credentials: 'same-origin'});
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            render(await res.json());
+            document.getElementById('status').textContent = '';
+        } catch (err) {
+            document.getElementById('status').textContent = 'Failed to load the course: ' + err.message;
+        }
+    }
+
+    poll();
+    setInterval(poll, 2000);
+</script>
+</body>
+</html>

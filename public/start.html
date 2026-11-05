@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<!-- public/start.html: the start line, its visualisation and the start timer. -->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SignalK Racer Start</title>
+    <style>
+
+        body {
+            background-color: black;
+            color: white; /* optional for visibility */
+        }
+
+        .button-timer-command { background-color: #041b8e; color: white; font-size: 1em; font-weight: bold; }
+        .button-timer-adjust  { background-color: #2196F3; color: white; }
+
+        button {
+            padding: 0.5em 0.6em;
+            font-size: 1em;
+            cursor: pointer;
+            border: none;
+            border-radius: 4px;
+        }
+
+        body {
+            font-family: sans-serif;
+            /* Everything is sized in em from here, so the page scales with its width:
+               about 19px on a phone, 32px at 1000px, up to 48px on a large screen. */
+            font-size: clamp(18px, 12px + 2vw, 48px);
+            max-width: 100%;
+            margin: 1em auto;
+            padding: 0 16px;
+            text-align: center;
+        }
+
+        a { color: #8cf; }
+        .nav { display: flex; justify-content: space-between; align-items: baseline; font-size: 0.8em; margin-bottom: 0.5em; }
+        .nav b { font-size: 1.2em; }
+
+        /* Time and distance to the line, either side below the drawing. */
+        .line-stats { display: flex; justify-content: center; gap: 2em; }
+
+        /* Seven buttons across: on a narrow screen they shrink to fit rather than overflow. */
+        .adjust-grid {
+            display: grid;
+            grid-template-columns: repeat(7, auto);
+            grid-template-rows: repeat(3, auto);
+            gap: 0.5em;
+            font-size: min(1em, 3.6vw);
+        }
+
+        input[readonly] {
+            background: #eee;
+            border: 1px solid #ccc;
+            padding: 0.3em;
+        }
+
+        #status {
+            margin-top: 1em;
+            font-size: 1em;
+            color: green;
+        }
+
+        .port-set    { background-color: #f88; color: black; font-size: 1em;}
+        .port-move   { background-color: #a00; color: white; }
+        .port-rotate { background-color: #a00; color: white; }
+        .stb-set     { background-color: #8f8; color: black; font-size: 1em; }
+        .stb-move    { background-color: #080; color: white;}
+        .stb-rotate  { background-color: #080; color: white; }
+
+        .line-swap { background-color: #555; color: white; font-size: 1.3em; font-weight: bold; }
+
+        .viz-row {
+            margin-top: 1em;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5em;
+        }
+
+        /* The drawing takes the full width of the window, at up to twice the widget's
+           original 260px height. Narrow windows get a shorter drawing so it keeps a
+           sensible aspect; the drawing widens its own viewBox to fill whatever it gets. */
+        .viz { width: 100%; }
+        #lineSvg { display: block; width: 100%; height: min(520px, max(260px, 65vw)); }
+
+        .cross-stat { line-height: 1; }
+        .cross-stat-label { font-size: 0.65em; color: #aaa; }
+        /* Large, but never wider than a phone allows. */
+        .cross-stat-value { font-size: min(3.6em, 13vw); font-weight: bold; font-family: monospace; }
+        #timeToStart {
+            font-size: min(3em, 18vw);
+            font-weight: bold;
+            font-family: monospace;
+            line-height: 1.1;
+        }
+
+        #startLineSelect {
+            font-size: 1em;
+            padding: 0.3em;
+            margin-left: 0.5em;
+        }
+
+    </style>
+</head>
+<body>
+
+<div class="nav">
+    <b>Start</b>
+    <span><a href="vmg.html">VMG</a> &middot; <a href="course.html">Course</a> &middot; <a href="index.html">Racer</a></span>
+</div>
+
+<script src="line-view.js"></script>
+<script>
+    let socket;
+    let statusTimer;
+    let startTime;
+
+    function updateStatus(message) {
+        const status = document.getElementById('status');
+        if (!status) return;
+        status.textContent = message;
+        if (statusTimer) clearTimeout(statusTimer);
+        statusTimer = setTimeout(() => {
+            if (status.textContent === message) {
+                status.textContent = '-';
+            }
+        }, 10000);
+    }
+
+    function toRadians(degrees) {
+        return degrees ? degrees * (Math.PI / 180) : null;
+    }
+
+    const KNOTS_TO_MS = 0.514444;
+    const VMG_NAMES = ['toCourseSide', 'fromCourseSide', 'toPortEnd', 'toStbEnd'];
+
+    // What the two projections from the boat mean. Shown on hover rather than as a
+    // drawn legend, so the visualization stays clean.
+
+
+
+    // Everything the line visualization needs, filled in from the delta stream.
+    const nav = {
+        port: null,
+        stb: null,
+        position: null,
+        headingTrue: null,
+        cog: null,
+        sog: null,
+        timeToStart: null,
+        timerRunning: false,
+        startTime: null,
+        timeToLine: null,
+        distanceToLine: null,
+        boatLength: null,
+        twd: null,
+        effVmgToLine: null,
+        effVmgAlongLine: null,
+        lineLength: null,
+        lineBearing: null,
+        bestVmg: {toCourseSide: null, fromCourseSide: null, toPortEnd: null, toStbEnd: null},
+        overrides: {toCourseSide: null, fromCourseSide: null, toPortEnd: null, toStbEnd: null}
+    };
+
+    let renderPending = false;
+
+    function scheduleRender() {
+        if (renderPending) return;
+        renderPending = true;
+        requestAnimationFrame(() => {
+            renderPending = false;
+            renderLine();
+            renderStats();
+        });
+    }
+
+    // The drawing itself lives in line-view.js, ported from the KIP widget so both
+    // show the same picture. It holds its own fitted view between renders.
+    let lineView = null;
+
+    function renderLine() {
+        const svg = document.getElementById('lineSvg');
+        const info = document.getElementById('lineInfo');
+        if (!svg) return;
+        if (!lineView) lineView = RacerLineView.create(svg);
+        lineView.render(nav);
+
+        if (info) {
+            const known = nav.port && nav.stb && nav.position
+                && typeof nav.position.latitude === 'number';
+            info.textContent = known ? (nav.distanceToLine < 0 ? 'OCS' : 'behind line') : '';
+        }
+    }
+
+    // Time and distance to the line, below the drawing.
+    function renderStats() {
+        const ttl = document.getElementById('timeToLine');
+        if (ttl)
+            ttl.textContent = formatTimeToMMSS(nav.timeToLine);
+
+        const dtl = document.getElementById('distanceToLine');
+        if (dtl) {
+            const value = nav.distanceToLine;
+            dtl.textContent = value == null ? '--' : `${Math.round(value)}m`;
+            // Negative is over the line, the one case worth catching at a glance.
+            dtl.style.color = value != null && value < 0 ? '#fc0' : '#fff';
+        }
+    }
+
+    function connectWebSocket() {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const socketUrl = protocol + '//' + window.location.host + '/signalk/v1/stream?subscribe=none';
+        socket = new WebSocket(socketUrl);
+
+        socket.onopen = () => {
+            updateStatus('✅ Connected to Signal K server');
+            socket.send(JSON.stringify({
+                context: "vessels.self",
+                subscribe: [
+                    {path: "navigation.racing.*", policy: "instant"},
+                    // Needed to place the boat against the line in the visualization.
+                    {path: "navigation.position", period: 1000},
+                    {path: "navigation.courseOverGroundTrue", period: 1000},
+                    {path: "navigation.headingTrue", period: 1000},
+                    {path: "navigation.speedOverGround", period: 1000},
+                    // The hull is drawn at true scale, and the wind against the line.
+                    {path: "design.length", period: 10000},
+                    {path: "environment.wind.directionTrue", period: 1000}
+                ]
+            }));
+        };
+
+        socket.onerror = (err) => updateStatus('WebSocket error: ' + err.message);
+        socket.onclose = () => {
+            updateStatus('Disconnected. Retrying in 5s...');
+            setTimeout(connectWebSocket, 5000);
+        };
+
+        socket.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.updates) {
+                data.updates.forEach(update => {
+                    if (update.values) {
+                        update.values.forEach(value => {
+                            switch (value.path) {
+                                case "navigation.racing.startLineLength":
+                                    nav.lineLength = value.value;
+                                    scheduleRender();
+                                    break;
+                                case "navigation.racing.startLineBearing":
+                                    nav.lineBearing = value.value;
+                                    scheduleRender();
+                                    break;
+                                case "navigation.racing.lines":
+                                    // Follows a line selected, or deactivated, elsewhere.
+                                    if (value.value)
+                                        showStartLines(value.value);
+                                    break;
+                                case "navigation.racing.startLinePort":
+                                    nav.port = value.value;
+                                    scheduleRender();
+                                    break;
+                                case "navigation.racing.startLineStb":
+                                    nav.stb = value.value;
+                                    scheduleRender();
+                                    break;
+                                case "navigation.position":
+                                    nav.position = value.value;
+                                    scheduleRender();
+                                    break;
+                                case "navigation.headingTrue":
+                                    nav.headingTrue = value.value;
+                                    scheduleRender();
+                                    break;
+                                case "navigation.courseOverGroundTrue":
+                                    nav.cog = value.value;
+                                    scheduleRender();
+                                    break;
+                                case "navigation.speedOverGround":
+                                    nav.sog = value.value;
+                                    scheduleRender();
+                                    break;
+                                case "navigation.racing.effectiveVmg.toLine":
+                                    nav.effVmgToLine = value.value;
+                                    scheduleRender();
+                                    break;
+                                case "navigation.racing.effectiveVmg.alongLine":
+                                    nav.effVmgAlongLine = value.value;
+                                    scheduleRender();
+                                    break;
+                                case "design.length.overall":
+                                    nav.boatLength = value.value;
+                                    scheduleRender();
+                                    break;
+                                case "environment.wind.directionTrue":
+                                    nav.twd = value.value;
+                                    scheduleRender();
+                                    break;
+                                case "navigation.racing.timeToLine":
+                                    nav.timeToLine = value.value;
+                                    scheduleRender();
+                                    break;
+                                case "navigation.racing.distanceStartline":
+                                    nav.distanceToLine = value.value;
+                                    scheduleRender();
+                                    break;
+                                case "navigation.racing.stbLineBias":
+                                    break;
+                                case "navigation.racing.timeToStart": {
+                                    nav.timeToStart = value.value;
+                                    const timer = document.getElementById('timeToStart');
+                                    if (timer) timer.textContent = formatTimeToMMSS(value.value);
+                                    scheduleRender();
+                                    break;
+                                }
+                                case "navigation.racing.startTime": {
+                                    // The plugin clears startTime whenever the timer is not
+                                    // counting down, so it doubles as the running flag.
+                                    nav.timerRunning = !!value.value;
+                                    nav.startTime = value.value || null;
+                                    scheduleRender();
+                                    if (!value.value) {
+                                        document.getElementById('startTime').value = "HH:MM:SS";
+                                    } else {
+                                        startTime = new Date(value.value); // handles ISO 8601 format
+                                        document.getElementById('startTime').value =
+                                            startTime.toLocaleTimeString([], {
+                                                hour: '2-digit',
+                                                minute: '2-digit',
+                                                second: '2-digit'
+                                            });
+                                    }
+                                    break;
+                                }
+                                default: {
+                                    // navigation.racing.bestVmg.<name>, and the manual
+                                    // adjustment alongside it at .<name>.override
+                                    const prefix = "navigation.racing.bestVmg.";
+                                    if (value.path.startsWith(prefix)) {
+                                        const rest = value.path.slice(prefix.length);
+                                        const isOverride = rest.endsWith(".override");
+                                        const name = isOverride
+                                            ? rest.slice(0, -".override".length)
+                                            : rest;
+                                        if (VMG_NAMES.includes(name)) {
+                                            if (isOverride)
+                                                nav.overrides[name] = value.value;
+                                            else
+                                                nav.bestVmg[name] = value.value;
+                                            scheduleRender();
+                                            break;
+                                        }
+                                    }
+                                    console.log("Received value: " + value.path + " = " + JSON.stringify(value.value));
+                                    break;
+                                }
+                            }
+                        });
+                    }
+                });
+            }
+        };
+    }
+
+    function sendSetStartLine(end) {
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            updateStatus('WebSocket not connected.');
+            return;
+        }
+        let message = JSON.stringify({
+            context: 'vessels.self',
+            put: {
+                path: 'navigation.racing.setStartLine',
+                value: { end, position : 'bow'}
+            }
+        });
+        console.log("sendSetStartLine: " + message);
+        socket.send(message);
+        updateStatus(`Sent request to set ${end}`);
+    }
+
+    function sendAdjustStartLine(end, delta, rotate) {
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            updateStatus('WebSocket not connected.');
+            return;
+        }
+        const message = JSON.stringify({
+            context: 'vessels.self',
+            put: {
+                path: 'navigation.racing.setStartLine',
+                value: { end, delta, rotate : rotate ? toRadians(rotate) : null }
+            }
+        });
+        console.log("sendAdjustStartLine: " + message);
+        socket.send(message);
+        updateStatus(`Sent ${delta}m ${rotate}° request for ${end}`);
+    }
+
+    // The racing paths are subscribed with policy "instant", so they only arrive when
+    // they change - which for the line ends may be never. Seed the current state once.
+    function loadInitialState() {
+        fetch(window.location.origin + '/signalk/v1/api/vessels/self/navigation')
+            .then(res => {
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                return res.json();
+            })
+            .then(data => {
+                const leaf = (node) => (node && node.value !== undefined) ? node.value : null;
+                const racing = data.racing || {};
+
+                nav.port = leaf(racing.startLinePort);
+                nav.stb = leaf(racing.startLineStb);
+                nav.lineLength = leaf(racing.startLineLength);
+                nav.lineBearing = leaf(racing.startLineBearing);
+                nav.position = leaf(data.position);
+                nav.headingTrue = leaf(data.headingTrue);
+                nav.cog = leaf(data.courseOverGroundTrue);
+                nav.sog = leaf(data.speedOverGround);
+                nav.timeToStart = leaf(racing.timeToStart);
+                nav.timerRunning = !!leaf(racing.startTime);
+                nav.startTime = leaf(racing.startTime);
+                nav.timeToLine = leaf(racing.timeToLine);
+                nav.distanceToLine = leaf(racing.distanceStartline);
+
+                const bestVmg = racing.bestVmg || {};
+                for (const name of VMG_NAMES) {
+                    nav.bestVmg[name] = leaf(bestVmg[name]);
+                    // The adjustment is a child node of the value it stands in for.
+                    nav.overrides[name] = leaf(bestVmg[name] && bestVmg[name].override);
+                }
+
+                // The timer only sends deltas while it is counting down, so a stopped
+                // timer would otherwise leave the countdown and start time blank.
+                const timer = document.getElementById('timeToStart');
+                if (timer && timer.textContent === '--:--')
+                    timer.textContent = formatTimeToMMSS(leaf(racing.timeToStart));
+
+                const at = document.getElementById('startTime');
+                if (at && !at.value) {
+                    const value = leaf(racing.startTime);
+                    at.value = value
+                        ? new Date(value).toLocaleTimeString([], {
+                            hour: '2-digit', minute: '2-digit', second: '2-digit'
+                        })
+                        : 'HH:MM:SS';
+                }
+
+                scheduleRender();
+            })
+            .catch(err => {
+                console.error('Failed to load initial state:', err);
+                updateStatus('Failed to load initial state: ' + err.message);
+            });
+    }
+
+    function sendSwapStartLine() {
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            updateStatus('WebSocket not connected.');
+            return;
+        }
+        socket.send(JSON.stringify({
+            context: 'vessels.self',
+            put: {
+                path: 'navigation.racing.swapStartLine',
+                value: {}
+            }
+        }));
+        updateStatus('Sent request to swap the line ends');
+    }
+
+    // Select value standing for "no line": the line is deactivated, not a line named this.
+    const NO_LINE = '\u0000none';
+
+    function loadStartLines() {
+        const url = window.location.origin +
+            '/signalk/v1/api/vessels/self/navigation/racing/lines';
+
+        fetch(url)
+            .then(res => {
+                if (!res.ok) {
+                    throw new Error('HTTP ' + res.status);
+                }
+                return res.json();
+            })
+            .then(data => {
+                const payload = data && data.value ? data.value : { lines: [], startLineName: null };
+                showStartLines(payload);
+                updateStatus('Loaded start lines: ' + (payload.lines || []).length + ' lines');
+            })
+            .catch(err => {
+                console.error('Failed to load start lines:', err);
+                updateStatus('Failed to load start lines: ' + err.message);
+            });
+    }
+
+    function showStartLines(payload) {
+        const select = document.getElementById('startLineSelect');
+        if (!select) return;
+
+        // Clear existing options
+        select.innerHTML = '';
+
+        // Deactivates the line, so it is neither drawn nor calculated
+        const noLineOpt = document.createElement('option');
+        noLineOpt.value = NO_LINE;
+        noLineOpt.textContent = 'No line';
+        select.appendChild(noLineOpt);
+
+        // Default option = "no named line"
+        const defaultOpt = document.createElement('option');
+        defaultOpt.value = '';
+        defaultOpt.textContent = 'Default line';
+        select.appendChild(defaultOpt);
+
+        if (Array.isArray(payload.lines)) {
+            payload.lines.forEach(line => {
+                const opt = document.createElement('option');
+                opt.value = line.startLineName;
+                opt.textContent = line.startLineDescription
+                    ? `${line.startLineName} – ${line.startLineDescription}`
+                    : line.startLineName;
+                select.appendChild(opt);
+            });
+        }
+
+        // Preselect active
+        if (payload.active === false) {
+            select.value = NO_LINE;
+        } else if (!payload.startLineName) {
+            select.value = '';
+        } else {
+            select.value = payload.startLineName;
+            if (select.value !== payload.startLineName) {
+                // In case active name not in the list
+                select.value = '';
+            }
+        }
+
+        const version = document.getElementById('pluginVersion');
+        if (version)
+            version.textContent = payload.pluginVersion
+                ? `signalk-racer ${payload.pluginVersion}`
+                : 'signalk-racer (version not reported)';
+    }
+
+    function setStartLineName(startLineName) {
+        const url = window.location.origin +
+            '/signalk/v1/api/vessels/self/navigation/racing/setStartLineName';
+
+        const deactivate = startLineName === NO_LINE;
+        const body = {
+            value: deactivate
+                ? {active: false}
+                : {startLineName: startLineName === '' ? null : startLineName}
+        };
+
+        fetch(url, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        })
+            .then(res => {
+                if (!res.ok) {
+                    throw new Error('HTTP ' + res.status);
+                }
+                return res.json().catch(() => ({}));
+            })
+            .then(() => {
+                updateStatus(
+                    deactivate ? 'Line deactivated'
+                        : startLineName ? `Active line set to: ${startLineName}`
+                        : 'Active line set to Default'
+                );
+            })
+            .catch(err => {
+                console.error('Failed to set active line:', err);
+                updateStatus('Failed to set active line: ' + err.message);
+            });
+    }
+
+    // connect WS and load lines once the page is running
+    connectWebSocket();
+    // The drawing sizes its viewBox to the box it is given, so redraw when that changes.
+    document.addEventListener('DOMContentLoaded', () =>
+        new ResizeObserver(() => scheduleRender()).observe(document.getElementById('lineSvg')));
+    loadStartLines();
+    loadInitialState();
+
+    function formatTimeToMMSS(seconds) {
+        if (seconds == null || isNaN(seconds)) return '--:--';
+        const sign = seconds < 0 ? '-' : '';
+        const total = Math.floor(Math.abs(seconds));
+        const mm = Math.floor(total / 60);
+        const ss = total % 60;
+        return `${sign}${mm.toString().padStart(2, '0')}:${ss.toString().padStart(2, '0')}`;
+    }
+
+    function adjustStartTime(deltaSeconds) {
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            updateStatus('WebSocket not connected.');
+            return;
+        }
+        socket.send(JSON.stringify({
+            context: 'vessels.self',
+            put: {
+                path: 'navigation.racing.setStartTime',
+                value: {
+                    command: 'adjust',
+                    delta: deltaSeconds
+                }
+            }
+        }));
+        updateStatus(`Sent delta timeToStart: ${deltaSeconds} sec`);
+    }
+
+    function setStartTime() {
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            updateStatus('WebSocket not connected.');
+            return;
+        }
+
+        try {
+            const now = new Date();
+            const parts = document.getElementById('startTime').value.split(':').map(Number);
+            const hours = parts[0];
+            const minutes = parts[1];
+            const seconds = parts.length >= 3 ? parts[2] : 0;
+            const date = new Date(now);
+            date.setHours(hours, minutes, seconds, 0);
+            if (date <= now)
+                date.setDate(date.getDate() + 1);
+
+            socket.send(JSON.stringify({
+                context: 'vessels.self',
+                put: {
+                    path: 'navigation.racing.setStartTime',
+                    value: {
+                        command: 'set',
+                        startTime: date.toISOString(),
+                    }
+                }
+            }));
+            updateStatus(`Sent start time: ${date.toLocaleTimeString()}`);
+        } catch (err) {
+            console.log('Could not set start at ', err);
+        }
+    }
+
+    function sendTimerCommand(command) {
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            updateStatus('WebSocket not connected.');
+            return;
+        }
+        socket.send(JSON.stringify({
+            context: 'vessels.self',
+            put: {
+                path: 'navigation.racing.setStartTime',
+                value: { command }
+            }
+        }));
+        updateStatus(`Sent timer command: ${command}`);
+    }
+</script>
+
+<!-- Race countdown -->
+<div style="margin-top: 1em;">
+    <div style="font-size: 0.75em; color: #aaa;">Time to start</div>
+    <div id="timeToStart">--:--</div>
+</div>
+
+<!-- Start Time Row -->
+<div style="margin-top: 1em; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 0.5em;">
+    <button class="button-timer-adjust" onclick="adjustStartTime(-60)">-1min</button>
+    <button class="button-timer-adjust" onclick="adjustStartTime(-1)">-1s</button>
+    <label for="startTime">At: <input id="startTime" style="font-size: 1.5em; width: 6em; text-align: center;"></label>
+    <button class="button-timer-adjust" onclick="adjustStartTime(1)">+1s</button>
+    <button class="button-timer-adjust" onclick="adjustStartTime(60)">+1min</button>
+</div>
+
+<!-- Timer Control Buttons -->
+<div style="margin-top: 0.5em;">
+    <button class="button-timer-command" onclick="sendTimerCommand('start')">Start</button>
+    <button class="button-timer-command" onclick="setStartTime()">At</button>
+    <button class="button-timer-command" onclick="sendTimerCommand('sync')">Sync</button>
+    <button class="button-timer-command" onclick="sendTimerCommand('reset')">Reset</button>
+</div>
+
+<!-- Start line visualization, with the time and distance to the line below it. -->
+<div class="viz-row">
+    <div class="viz">
+        <svg id="lineSvg" viewBox="0 0 400 260" preserveAspectRatio="xMidYMid meet"></svg>
+        <div id="lineInfo" style="font-size: 0.9em; color: #aaa;"></div>
+    </div>
+
+    <div class="line-stats">
+        <div class="cross-stat" title="Time to line at the effective VMG">
+            <div class="cross-stat-value" id="timeToLine">--:--</div>
+            <div class="cross-stat-label">TTL</div>
+        </div>
+        <div class="cross-stat" title="Distance from the bow to the line, negative when OCS">
+            <div class="cross-stat-value" id="distanceToLine">--</div>
+            <div class="cross-stat-label">DTL</div>
+        </div>
+    </div>
+</div>
+
+<!-- Start-line selector -->
+<div style="margin-top: 1em;">
+    <label for="startLineSelect">Start line:</label>
+    <select id="startLineSelect" onchange="setStartLineName(this.value)"></select>
+</div>
+
+<!-- Start line adjustment -->
+<div style="margin-top: 1em; display: flex; justify-content: center; align-items: center; gap: 3em; flex-wrap: wrap;">
+    <div class="adjust-grid">
+        <div></div>
+        <button class="port-rotate" onclick="sendAdjustStartLine('port', 0, 1)">+1°</button>
+        <div></div>
+
+        <div></div>
+
+        <div></div>
+        <button class="stb-rotate" onclick="sendAdjustStartLine('stb', 0, -1)">+1°</button>
+        <div></div>
+
+        <!--------->
+
+        <button class="port-move" onclick="sendAdjustStartLine('port', 5, 0)">+5m</button>
+        <button class="port-set" onclick="sendSetStartLine('port')">Port</button>
+        <button class="port-move" onclick="sendAdjustStartLine('port', -5, 0)">-5m</button>
+
+        <button class="line-swap" onclick="sendSwapStartLine()" title="Swap the port and starboard ends">&#8596;</button>
+
+        <button class="stb-move" onclick="sendAdjustStartLine('stb', -5, 0)">-5m</button>
+        <button class="stb-set" onclick="sendSetStartLine('stb')">Stbd</button>
+        <button class="stb-move" onclick="sendAdjustStartLine('stb', 5, 0)">+5m</button>
+
+        <!--------->
+
+        <div></div>
+        <button class="port-rotate" onclick="sendAdjustStartLine('port', 0, -1)">-1°</button>
+        <div></div>
+
+        <div></div>
+
+        <div></div>
+        <button class="stb-rotate" onclick="sendAdjustStartLine('stb', 0, 1)">-1°</button>
+        <div></div>
+    </div>
+</div>
+
+<div id="status">Connecting...</div>
+<div id="pluginVersion" style="margin-top: 0.5em; font-size: 0.8em; color: #888;">signalk-racer</div>
+
+</body>
+</html>

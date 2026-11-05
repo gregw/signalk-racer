@@ -144,6 +144,7 @@ module.exports = (app) => {
         }
     }
     const { v4: uuidv4 } = require('uuid');
+    const { courseReview } = require('./course');
     const pluginVersion = require('./package.json').version;
     const {
         initRacer,
@@ -1583,6 +1584,117 @@ module.exports = (app) => {
         return null;
     }
 
+    // The active route, from the server's Course API. Servers that keep the course only in
+    // the v2 API do not publish navigation.course.activeRoute in the v1 data model, so ask
+    // the Course API, and fall back to the v1 path for servers without getCourse.
+    async function currentActiveRoute() {
+        if (typeof app.getCourse === 'function') {
+            try {
+                return (await app.getCourse())?.activeRoute ?? null;
+            } catch (err) {
+                app.debug('getCourse: ' + err);
+            }
+        }
+        return app.getSelfPath('navigation.course.activeRoute')?.value ?? null;
+    }
+
+    // Follow the active route from the Course API, at most every few seconds, as its changes
+    // do not reach a v1 subscription on servers that keep the course only in the v2 API.
+    function checkActiveRoute() {
+        const now = Date.now();
+        if (state.activeRouteChecked && now - state.activeRouteChecked < 5000)
+            return;
+        state.activeRouteChecked = now;
+        currentActiveRoute().then(activeRoute => {
+            const key = activeRoute
+                ? `${activeRoute.href}|${activeRoute.pointIndex}|${activeRoute.reverse}`
+                : null;
+            if (key === state.activeRouteKey)
+                return;
+            state.activeRouteKey = key;
+            processRoute(activeRoute);
+        }).catch(err => app.debug('active route: ' + err));
+    }
+
+    // A route's points in the route's own order, each named from the waypoint it refers to
+    // when there is one. The route holds copies of the waypoints' positions, which is what
+    // the Course API navigates to, so those are used; a waypoint moved since the route was
+    // made is reported with how far it has moved.
+    async function routePoints(routeId) {
+        const route = await app.resourcesApi.getResource('routes', routeId);
+        const coordinates = route?.feature?.geometry?.coordinates || [];
+        const meta = route?.feature?.properties?.coordinatesMeta || [];
+        const points = [];
+        for (let i = 0; i < coordinates.length; i++) {
+            const [longitude, latitude] = coordinates[i];
+            const position = {latitude, longitude};
+            const point = {name: meta[i]?.name ?? null, position, moved: null};
+            const href = meta[i]?.href;
+            if (typeof href === 'string' && href.includes('/waypoints/')) {
+                try {
+                    const waypoint = await app.resourcesApi.getResource('waypoints', href.split('/').pop());
+                    point.name = waypoint?.name ?? point.name;
+                    const now = waypointToPosition(waypoint);
+                    if (now) {
+                        const moved = geolib.getPreciseDistance(position, now, 0.1);
+                        if (moved >= 1) point.moved = moved;
+                    }
+                } catch (err) {
+                    app.debug(`route ${routeId} waypoint ${href}: ${err}`);
+                }
+            }
+            points.push(point);
+        }
+        return {name: route?.name ?? null, description: route?.description ?? null, points};
+    }
+
+    // The bearing and distance to the next point as published by others: the server's
+    // Course API, or a chart plotter over NMEA (e.g. 0183 RMB/BWC, NMEA 2000 PGN 129284).
+    function publishedNextPoint() {
+        const read = (path) => {
+            const v = app.getSelfPath(path);
+            return typeof v?.value === 'number' && Number.isFinite(v.value) ? {value: v.value, source: v.$source ?? null} : null;
+        };
+        const result = [];
+        for (const [label, prefix] of [
+            ['Course API', 'navigation.course.calcValues'],
+            ['Great circle', 'navigation.courseGreatCircle.nextPoint'],
+            ['Rhumb line', 'navigation.courseRhumbline.nextPoint'],
+        ]) {
+            const bearing = read(`${prefix}.bearingTrue`);
+            const distance = read(`${prefix}.distance`);
+            if (bearing || distance)
+                result.push({label, bearing: bearing?.value ?? null, distance: distance?.value ?? null,
+                    source: bearing?.source ?? distance?.source});
+        }
+        return result;
+    }
+
+    // The current, as {set, drift, source}: set in radians true (the direction it flows
+    // towards), drift in m/s. Either as the spec's environment.current object, or as the
+    // separate paths published by e.g. signalk-derived-data's set and drift. Null if unknown.
+    function currentNow() {
+        const node = app.getSelfPath('environment.current');
+        const number = (v) => typeof v === 'number' && Number.isFinite(v) ? v : null;
+        let drift = null, set = null, source = null;
+        if (node?.value && typeof node.value === 'object') {
+            drift = number(node.value.drift);
+            set = number(node.value.setTrue);
+            source = node.$source ?? null;
+        } else {
+            drift = selfNumber('environment.current.drift');
+            set = selfNumber('environment.current.setTrue');
+            source = app.getSelfPath('environment.current.drift')?.$source ?? null;
+            if (set === null) {
+                const magnetic = selfNumber('environment.current.setMagnetic');
+                const variation = selfNumber('navigation.magneticVariation');
+                if (magnetic !== null && variation !== null)
+                    set = magnetic + variation;
+            }
+        }
+        return drift !== null && set !== null ? {set, drift, source} : null;
+    }
+
     // Return the plugin
     return {
         id: 'signalk-racer',
@@ -1616,6 +1728,8 @@ module.exports = (app) => {
             state.options = options;
             discoverPolars();
             state.lineActive = true;
+            state.activeRouteChecked = 0;
+            state.activeRouteKey = undefined;
             state.wayPointsScanned = false;
             state.timeToStart = options.timer;
             state.startLine = getStartLine();
@@ -1675,12 +1789,7 @@ module.exports = (app) => {
                     else
                         findLineAndThenProcess(position, false);
 
-                    if (!state.initActiveRoute) {
-                        state.initActiveRoute = true;
-                        const activeRoute = app.getSelfPath('navigation.course.activeRoute');
-                        if (activeRoute)
-                            processRoute(activeRoute.value);
-                    }
+                    checkActiveRoute();
                 }
             )
 
@@ -1763,6 +1872,9 @@ module.exports = (app) => {
                             app.debug("DELTA ACTIVE ROUTE: " + v.path + ' = ' + JSON.stringify(route));
                         })
                     });
+                    state.activeRouteKey = route
+                        ? `${route.href}|${route.pointIndex}|${route.reverse}`
+                        : null;
                     processRoute(route);
                 }
             );
@@ -1841,6 +1953,52 @@ module.exports = (app) => {
         // GET /plugins/signalk-racer/vmg: everything behind the best VMGs, for the
         // webapp's VMG detail page.
         registerWithRouter: (router) => {
+            // GET /plugins/signalk-racer/course[?route=<id>]: a row for every point of the
+            // active route, or of the route given, for the webapp's course review page.
+            router.get('/course', async (req, res) => {
+                try {
+                    const activeRoute = await currentActiveRoute();
+                    const activeId = activeRoute?.href ? activeRoute.href.split('/').pop() : null;
+                    const routeId = req.query?.route || activeId;
+                    const routes = await app.resourcesApi.listResources('routes', {})
+                        .then(all => Object.entries(all || {}).map(([id, r]) => ({id, name: r?.name ?? id})))
+                        .catch(() => []);
+                    const twd = selfNumber('environment.wind.directionTrue');
+                    const position = app.getSelfPath('navigation.position')?.value ?? null;
+                    const body = {
+                        pluginVersion, routes, activeId, routeId: routeId ?? null,
+                        position, twd, tws: selfNumber('environment.wind.speedTrue'),
+                        nextPoint: publishedNextPoint(),
+                        current: currentNow(),
+                        // As published by this plugin, for the leg after the point being
+                        // sailed to: they should match that leg's row.
+                        nextLeg: {
+                            heading: selfNumber('navigation.racing.nextLegHeading'),
+                            twa: selfNumber('navigation.racing.nextLegTrueWindAngle'),
+                        },
+                        route: null,
+                    };
+                    if (routeId) {
+                        const route = await routePoints(routeId);
+                        const isActive = routeId === activeId;
+                        const review = courseReview({
+                            points: route.points,
+                            reverse: isActive ? !!activeRoute.reverse : false,
+                            pointIndex: isActive && Number.isInteger(activeRoute.pointIndex) ? activeRoute.pointIndex : null,
+                            position: position?.latitude != null ? position : null,
+                            twd,
+                        });
+                        const ordered = isActive && activeRoute.reverse ? [...route.points].reverse() : route.points;
+                        review.rows.forEach((row, i) => { row.moved = ordered[i].moved; });
+                        body.route = {name: route.name, description: route.description, active: isActive,
+                            reverse: isActive ? !!activeRoute.reverse : false, ...review};
+                    }
+                    res.json(body);
+                } catch (err) {
+                    res.status(500).json({error: String(err)});
+                }
+            });
+
             router.get('/vmg', (req, res) => {
                 const inputs = state.lastVmgInputs;
                 const inPlay = !!state.startLine && state.distanceToLine != null;

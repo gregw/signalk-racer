@@ -291,7 +291,7 @@ describe('polar management service', () => {
         const {plugin, position} = startPlugin(boat(), polarService(0.8));
         await position(BOAT);
         let handler;
-        plugin.registerWithRouter({get: (path, h) => { expect(path).toBe('/vmg'); handler = h; }});
+        plugin.registerWithRouter({get: (path, h) => { if (path === '/vmg') handler = h; }});
         let body;
         handler({}, {json: (b) => { body = b; }});
         expect(body.polar).toBe(true);
@@ -315,7 +315,7 @@ describe('polar management service', () => {
             boat({'environment.wind.speedTrue': {value: 1}}), polarService());
         await position(BOAT);
         let body;
-        plugin.registerWithRouter({get: (path, h) => h({}, {json: (b) => { body = b; }})});
+        plugin.registerWithRouter({get: (path, h) => { if (path === '/vmg') h({}, {json: (b) => { body = b; }}); }});
         expect(body.polar).toBe(true);
         expect(body.inputs.ratiosTaken).toBe(false);
         expect(body.directions.toCourseSide.samples).toBeGreaterThan(0);

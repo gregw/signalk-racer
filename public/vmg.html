@@ -10,9 +10,12 @@
             background-color: black;
             color: white;
             font-family: sans-serif;
+            /* Scales with the width, more gently than the other pages, as three cards sit
+               across: about 17px on a phone, 22px at 1300px, up to 32px. */
+            font-size: clamp(16px, 8px + 1.1vw, 32px);
             margin: 1em auto;
             padding: 0 16px;
-            max-width: 1100px;
+            max-width: 2200px;
         }
         a { color: #8cf; }
         h1 { font-size: 1.2em; margin: 0 0 0.5em; display: flex; justify-content: space-between; align-items: baseline; }
@@ -44,7 +47,8 @@
         #toStbEnd { grid-area: stb; }
         #fromCourseSide { grid-area: down; }
 
-        @media (max-width: 760px) {
+        /* Three cards across need a wide window at this font size. */
+        @media (max-width: 1300px) {
             .cross {
                 grid-template-columns: 1fr;
                 grid-template-areas: "centre" "up" "port" "stb" "down";
@@ -95,7 +99,7 @@
 
 <h1>
     <span>VMG detail</span>
-    <a href="index.html">&larr; Racer</a>
+    <span style="font-size:0.7em"><a href="start.html">Start</a> &middot; <a href="course.html">Course</a> &middot; <a href="index.html">Racer</a></span>
 </h1>
 
 <div class="cross">

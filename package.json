@@ -9,6 +9,7 @@
   "files": [
     "index.js",
     "racer.js",
+    "course.js",
     "openapi.json",
     "public/",
     "ReleaseNotes.md"

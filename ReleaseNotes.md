@@ -10,8 +10,15 @@
    See the [VMG](https://github.com/gregw/signalk-racer/wiki/VMG) wiki page
  + Samples age out after 10 minutes, and with a polar, a sample over 120% of it is discarded
    as motoring
- + Webapp: a VMG detail page, showing everything behind each VMG
+ + Webapp: now a menu of three pages, START (the line, its visualisation and the timer), VMG
+   and COURSE, at twice the font size. The small VMG adjustment buttons have moved to the VMG
+   page, which shows everything behind each VMG
+ + Webapp: the COURSE page, with a row for every point of the active (or any) route:
+   the bearing and distance from here, the leg heading and length, and the TWA on each leg in
+   the current wind. BTW/DTW from the Course API or over NMEA are shown for the next point
  + Fixed the line bias and next leg TWA not being published in a northerly
+ + Fixed the next leg heading and TWA not following the active route on servers that keep the
+   course only in the v2 Course API: the active route is now read from the Course API
 
 ## 1.3.9 Deactivate the line
  + The line can be deactivated with `{"active": false}` to `navigation.racing.setStartLineName`,
