@@ -1,3 +1,18 @@
+## 2.0.0 Polars
+ + The effective VMG used for the time to line is now the best of:
+   + the best VMG: with an active polar from
+     [signalk-polar-management](https://www.npmjs.com/package/signalk-polar-management) 1.5+,
+     the polar VMG for the current wind times a performance factor tuned by recent sailing;
+     otherwise, as before, a high percentile of recent samples;
+   + the VMG being achieved right now;
+   + the minimum, `minEffectiveVmg`.
+
+   See the [VMG](https://github.com/gregw/signalk-racer/wiki/VMG) wiki page
+ + Samples age out after 10 minutes, and with a polar, a sample over 120% of it is discarded
+   as motoring
+ + Webapp: a VMG detail page, showing everything behind each VMG
+ + Fixed the line bias and next leg TWA not being published in a northerly
+
 ## 1.3.9 Deactivate the line
  + The line can be deactivated with `{"active": false}` to `navigation.racing.setStartLineName`,
    so a line from an earlier race stops being drawn and calculated (#5). Its ends and

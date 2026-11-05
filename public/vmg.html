@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<!-- public/vmg.html: everything behind the best VMGs, laid out as the main page's cross. -->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SignalK Racer VMG</title>
+    <style>
+        body {
+            background-color: black;
+            color: white;
+            font-family: sans-serif;
+            margin: 1em auto;
+            padding: 0 16px;
+            max-width: 1100px;
+        }
+        a { color: #8cf; }
+        h1 { font-size: 1.2em; margin: 0 0 0.5em; display: flex; justify-content: space-between; align-items: baseline; }
+
+        button {
+            cursor: pointer;
+            border: none;
+            border-radius: 4px;
+            background-color: #333;
+            color: white;
+            padding: 0.3em 0.7em;
+            font-size: 0.9em;
+        }
+
+        /* The four directions as a cross, matching the main page: course side up, back
+           from it down, the port end left and the starboard end right. */
+        .cross {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            grid-template-areas:
+                ".    up     ."
+                "port centre stb"
+                ".    down   .";
+            gap: 0.6em;
+        }
+        #toCourseSide { grid-area: up; }
+        #toPortEnd { grid-area: port; }
+        #centre { grid-area: centre; }
+        #toStbEnd { grid-area: stb; }
+        #fromCourseSide { grid-area: down; }
+
+        @media (max-width: 760px) {
+            .cross {
+                grid-template-columns: 1fr;
+                grid-template-areas: "centre" "up" "port" "stb" "down";
+            }
+        }
+
+        .card {
+            background: #111;
+            border: 1px solid #333;
+            border-radius: 6px;
+            padding: 0.6em 0.7em;
+        }
+        .card.leg { border-color: #fc3; }
+        .card h2 {
+            font-size: 0.85em;
+            color: #aaa;
+            margin: 0 0 0.3em;
+            font-weight: normal;
+            display: flex;
+            justify-content: space-between;
+        }
+        .leg-tag { color: #fc3; }
+        .best { font-size: 2.2em; font-weight: bold; font-family: monospace; line-height: 1.1; }
+        .source { font-size: 0.75em; padding: 0.1em 0.4em; border-radius: 3px; margin-left: 0.4em; vertical-align: middle; }
+        .source.polar { background: #135; color: #8cf; }
+        .source.samples { background: #232; color: #8f8; }
+        .source.override { background: #420; color: #fb6; }
+        .source.now { background: #303; color: #f8f; }
+        .source.floor { background: #333; color: #ccc; }
+        /* The row forcing the effective VMG, and the row the best VMG comes from. */
+        tr.forcing td { color: #fc3; font-weight: bold; }
+        tr.from td { color: #fc3; }
+
+        table { width: 100%; border-collapse: collapse; font-size: 0.85em; margin-top: 0.3em; }
+        td { padding: 0.1em 0; }
+        td:first-child { color: #aaa; }
+        td.v { text-align: right; font-family: monospace; white-space: nowrap; }
+        tr.sep td { border-top: 1px solid #222; padding-top: 0.25em; }
+        .dim { color: #666; }
+
+        .adjust { display: flex; gap: 0.3em; justify-content: center; margin-top: 0.4em; }
+
+        #status { margin-top: 0.8em; font-size: 0.85em; color: #8f8; text-align: center; min-height: 1.2em; }
+        .note { font-size: 0.75em; color: #777; margin-top: 0.8em; line-height: 1.4; }
+    </style>
+</head>
+<body>
+
+<h1>
+    <span>VMG detail</span>
+    <a href="index.html">&larr; Racer</a>
+</h1>
+
+<div class="cross">
+    <div class="card" id="centre"></div>
+</div>
+
+<div id="status">Loading...</div>
+
+<div class="note">
+    Speeds in knots. <b>Polar ratio</b>: a sample's VMG over the polar VMG in that direction, for the
+    wind at the time. <b>Speed ratio</b>: the boat's speed over the polar speed at the angle sailed,
+    pooled across all directions. <b>Tuned performance factor</b>: the performance factor, blended
+    towards the pooled speed ratio and then the direction's own polar ratio as samples arrive. Best
+    VMG = polar VMG &times; tuned factor (or the sample percentile without a polar). The large number
+    is the effective VMG: the best of the best VMG, the VMG now, and the floor. The row forcing it is
+    highlighted in bold yellow, and the rows the best VMG comes from in yellow. Directions outlined in yellow are the legs
+    the time to line is built from.
+</div>
+
+<script>
+    const KNOTS = 1 / 0.514444;
+    const NAMES = {
+        toCourseSide: 'To course side',
+        toPortEnd: 'To port end (pin)',
+        toStbEnd: 'To stb end (boat)',
+        fromCourseSide: 'From course side (OCS)',
+    };
+
+    const kn = (v) => v == null ? '--' : (v * KNOTS).toFixed(2);
+    const pct = (v) => v == null ? '--' : (v * 100).toFixed(0) + '%';
+    const deg = (v) => v == null ? '--' : ((v * 180 / Math.PI + 360) % 360).toFixed(0) + '°';
+    const row = (label, value, cls = '') => `<tr class="${cls}"><td>${label}</td><td class="v">${value}</td></tr>`;
+    const near = (a, b) => a != null && b != null && Math.abs(a - b) < 1e-6;
+
+    // Which of the best VMG, the VMG now and the floor the effective VMG is.
+    function forcing(d, floor) {
+        if (near(d.effectiveVmg, d.bestVmg) && d.bestVmg > floor) return 'best';
+        if (near(d.effectiveVmg, d.currentVmg) && d.currentVmg > floor) return 'now';
+        return 'floor';
+    }
+
+    // Build the four direction cards once, then fill them on each poll.
+    const cross = document.querySelector('.cross');
+    for (const [name, title] of Object.entries(NAMES)) {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.id = name;
+        card.innerHTML = `
+            <h2><span>${title}</span><span class="leg-tag"></span></h2>
+            <div><span class="best">--</span><span class="source"></span></div>
+            <table></table>
+            <div class="adjust">
+                <button onclick="adjust('${name}', -0.1)">&minus;0.1</button>
+                <button onclick="reset('${name}')">Reset</button>
+                <button onclick="adjust('${name}', 0.1)">+0.1</button>
+            </div>`;
+        cross.appendChild(card);
+    }
+
+    function renderDirection(name, d, data) {
+        const card = document.getElementById(name);
+        const legs = data.legs || {};
+        const leg = legs.toLine === name ? 'to line' : legs.alongLine === name ? 'along line' : '';
+        card.classList.toggle('leg', !!leg);
+        card.querySelector('.leg-tag').textContent = leg;
+        // The big number is the effective VMG, tagged with what is forcing it.
+        const floor = data.config.minEffectiveVmg;
+        const force = forcing(d, floor);
+        card.querySelector('.best').textContent = kn(d.effectiveVmg);
+        const source = card.querySelector('.source');
+        source.className = 'source ' + (force === 'best' ? d.source : force);
+        source.textContent = force === 'best' ? `best (${d.source})` : force;
+
+        // Highlight the row forcing it and, when that is the best VMG, the rows it is from.
+        const is = (cond, cls) => cond ? cls : '';
+        const fromBest = (src) => force === 'best' && d.source === src;
+        const min = data.config.minSamples;
+        card.querySelector('table').innerHTML =
+            row(`Best VMG (${d.source})`, kn(d.bestVmg), is(force === 'best', 'forcing')) +
+            row('VMG now', kn(d.currentVmg), is(force === 'now', 'forcing')) +
+            row('Floor', kn(floor), is(force === 'floor', 'forcing')) +
+            row('Polar VMG', kn(d.polarVmg), 'sep ' + is(fromBest('polar'), 'from')) +
+            row('Tuned performance factor', pct(d.tunedFactor), is(fromBest('polar'), 'from')) +
+            row('Polar ratio percentile', d.ratios ? pct(d.ratioPercentile) : '<span class="dim">none</span>') +
+            row('Polar ratios', `${d.ratios} / ${min} (${pct(d.ratioWeight)} weight)`) +
+            row('Polar ratio now', pct(d.currentRatio)) +
+            row('Sample percentile', kn(d.samplePercentile), 'sep ' + is(fromBest('samples'), 'from')) +
+            row('Samples', `${d.samples} / ${data.config.maxSamples}`) +
+            row('Adjustment', d.override == null ? '<span class="dim">none</span>'
+                : kn(d.override) + (d.overrideFactor != null ? ` (${pct(d.overrideFactor)})` : ''),
+                is(fromBest('override'), 'from'));
+    }
+
+    function renderCentre(data) {
+        const i = data.inputs || {};
+        const p = data.pool;
+        const legs = data.legs;
+        document.getElementById('centre').innerHTML = `
+            <h2><span>Polar and wind</span><span>${data.polar ? 'polar in use' : '<span class="dim">no polar</span>'}</span></h2>
+            <table>
+                ${row('TWS / TWD', i.tws == null ? '--' : `${kn(i.tws)} / ${deg(i.twd)}`)}
+                ${row('Performance factor', pct(data.performanceFactor))}
+                ${row('Speed ratio percentile', p.ratios ? pct(p.percentile) : '<span class="dim">none</span>', 'sep')}
+                ${row('Speed ratios', `${p.ratios} / ${data.config.minSamples} (${pct(p.weight)} weight)`)}
+                ${row('Pooled factor', pct(p.pooledFactor))}
+                ${row(`Speed now (${i.speedSource === 'water' ? 'STW' : 'SOG'})`, kn(i.speed))}
+                ${row('TWA now', i.twa == null ? '--' : deg(i.twa))}
+                ${row('Polar speed now', kn(i.polarSpeed))}
+                ${row('Speed ratio now', pct(i.speedRatio))}
+                ${row('Ratios taken', i.ratiosTaken === false ? '<span class="dim">no: wind outside polar</span>' : data.polar ? 'yes' : '--')}
+                ${row('Max age / polar ratio', `${(data.config.maxSampleAge / 60).toFixed(0)} min / ${pct(data.config.maxPolarRatio)}`)}
+                ${row('Line', data.line ? `${data.line.bearing.toFixed(0)}°, ${data.line.length.toFixed(0)} m` : 'none', 'sep')}
+                ${row('Distance to line', data.distanceToLine == null ? '--' : data.distanceToLine.toFixed(0) + ' m')}
+                ${row('Effective to line', kn(data.effectiveVmg?.toLine))}
+                ${row('Effective along line', kn(data.effectiveVmg?.alongLine))}
+                ${row('Percentile / floor', `${pct(data.config.percentile)} / ${kn(data.config.minEffectiveVmg)}`)}
+            </table>
+            ${legs ? '' : '<div class="dim" style="font-size:0.8em;margin-top:0.3em">Line not in play: values are from the last position near it.</div>'}
+            <div class="adjust">
+                <button onclick="reset()">Reset all</button>
+                <button onclick="clearSamples()">Clear samples</button>
+            </div>
+            <div class="dim" style="font-size:0.75em;text-align:center;margin-top:0.4em">signalk-racer ${data.pluginVersion}</div>`;
+    }
+
+    let statusTimer;
+    function status(message, error = false) {
+        const el = document.getElementById('status');
+        el.textContent = message;
+        el.style.color = error ? '#f88' : '#8f8';
+        clearTimeout(statusTimer);
+        statusTimer = setTimeout(() => { el.textContent = ''; }, 5000);
+    }
+
+    async function poll() {
+        try {
+            const res = await fetch('/plugins/signalk-racer/vmg', {credentials: 'same-origin'});
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const data = await res.json();
+            renderCentre(data);
+            for (const name of Object.keys(NAMES))
+                renderDirection(name, data.directions[name], data);
+            if (document.getElementById('status').textContent === 'Loading...')
+                status('');
+        } catch (err) {
+            status('Failed to load VMG detail: ' + err.message, true);
+        }
+    }
+
+    async function put(value, message) {
+        try {
+            const res = await fetch('/signalk/v1/api/vessels/self/navigation/racing/setBestVmg', {
+                method: 'PUT',
+                credentials: 'same-origin',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({value}),
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            status(message);
+            poll();
+        } catch (err) {
+            status('Failed: ' + err.message, true);
+        }
+    }
+
+    function adjust(vmg, knots) {
+        put({vmg, delta: knots / KNOTS}, `Adjusted ${vmg} by ${knots > 0 ? '+' : ''}${knots} kn`);
+    }
+
+    function reset(vmg) {
+        put(vmg ? {command: 'reset', vmg} : {command: 'reset'}, vmg ? `Reset ${vmg}` : 'Reset all adjustments');
+    }
+
+    function clearSamples() {
+        if (confirm('Discard all collected VMG samples and ratios?'))
+            put({command: 'clear'}, 'Cleared all samples');
+    }
+
+    poll();
+    setInterval(poll, 1000);
+</script>
+</body>
+</html>

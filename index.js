@@ -9,6 +9,14 @@ module.exports = (app) => {
         publishedBestVmg: {toCourseSide: null, fromCourseSide: null, toPortEnd: null, toStbEnd: null},
         publishedBestVmgOverrides: {toCourseSide: null, fromCourseSide: null, toPortEnd: null, toStbEnd: null},
         publishedEffectiveVmg: {toLine: null, alongLine: null},
+        publishedPolarVmg: {toCourseSide: null, fromCourseSide: null, toPortEnd: null, toStbEnd: null},
+        publishedTunedFactor: {toCourseSide: null, fromCourseSide: null, toPortEnd: null, toStbEnd: null},
+        // The polar management service, when one is running, and a handle on the raw
+        // (unfactored) active polar, kept while the active selection is unchanged.
+        polarService: null,
+        rawPolar: null,
+        // What the last position was measured with, for the webapp's VMG detail page.
+        lastVmgInputs: null,
     };
     const geolib = require('geolib')
     const racerSchema = {
@@ -50,6 +58,16 @@ module.exports = (app) => {
                 title: 'Number of samples to collect for VMG calculations',
                 default: 600
             },
+            maxSampleAge: {
+                type: 'number',
+                title: 'Minutes after which VMG samples are discarded',
+                default: 10
+            },
+            maxPolarRatio: {
+                type: 'number',
+                title: 'Percentage of the polar above which a VMG sample is discarded, as the boat is probably motoring',
+                default: 120
+            },
             percentile: {
                 type: 'number',
                 title: 'Percentile used to select sample for VMG calculations (0-1)',
@@ -74,6 +92,11 @@ module.exports = (app) => {
                 type: 'number',
                 title: 'Maximum distance to line and/or line zone in meters to consider for VMG calculations',
                 default: 2000
+            },
+            usePolars: {
+                type: 'boolean',
+                title: 'Use the active polar from signalk-polar-management, when it is installed, for the best VMGs',
+                default: true
             },
             nearLineDistance: {
                 type: 'number',
@@ -137,6 +160,11 @@ module.exports = (app) => {
         setBestVmg,
         clearBestVmgOverrides,
         swapVmgEnds,
+        setPolar,
+        polarVmgs,
+        getPolarVmgs,
+        getTunedFactors,
+        getVmgDetail,
     } = require('./racer');
 
     const unsubscribes = [];
@@ -316,7 +344,7 @@ module.exports = (app) => {
         updates: [
             {
                 timestamp: new Date().toISOString(),
-                "meta": Object.keys(vmgNames).map(name => ({
+                "meta": Object.keys(vmgNames).flatMap(name => [{
                     "path": `navigation.racing.bestVmg.${name}.override`,
                     "value": {
                         "type": "number",
@@ -325,7 +353,25 @@ module.exports = (app) => {
                         "displayName": `Best VMG ${name} adjustment`,
                         "shortName": "Adjusted"
                     }
-                }))
+                }, {
+                    "path": `navigation.racing.polarVmg.${name}`,
+                    "value": {
+                        "type": "number",
+                        "units": "m/s",
+                        "description": `VMG ${name} from the active polar for the current wind, without the performance factor, null without a polar`,
+                        "displayName": `Polar VMG ${name}`,
+                        "shortName": "PolarVMG"
+                    }
+                }, {
+                    "path": `navigation.racing.tunedPerformanceFactor.${name}`,
+                    "value": {
+                        "type": "number",
+                        "units": "ratio",
+                        "description": `Performance factor ${name}, tuned from the samples, that the polar VMG is multiplied by for the best VMG, null without a polar`,
+                        "displayName": `Tuned performance factor ${name}`,
+                        "shortName": "Factor"
+                    }
+                }])
             }
         ]
     });
@@ -362,7 +408,22 @@ module.exports = (app) => {
         const overrides = state.startLine ? getBestVmgOverrides() : null;
         const deltas = [];
 
+        const polar = state.startLine ? getPolarVmgs() : null;
+        const factors = state.startLine ? getTunedFactors() : null;
+        const round = (v) => v == null ? null : Math.round(v * 1000) / 1000;
+
         for (const name of Object.keys(vmgNames)) {
+            const polarValue = round(polar?.[name]);
+            if (state.publishedPolarVmg[name] !== polarValue) {
+                state.publishedPolarVmg[name] = polarValue;
+                deltas.push({path: `navigation.racing.polarVmg.${name}`, value: polarValue});
+            }
+            const factor = round(factors?.[name]);
+            if (state.publishedTunedFactor[name] !== factor) {
+                state.publishedTunedFactor[name] = factor;
+                deltas.push({path: `navigation.racing.tunedPerformanceFactor.${name}`, value: factor});
+            }
+
             const value = best ? Math.round(best[name] * 1000) / 1000 : null;
             if (state.publishedBestVmg[name] !== value) {
                 state.publishedBestVmg[name] = value;
@@ -465,6 +526,105 @@ module.exports = (app) => {
     function selfNumber(path) {
         const value = app.getSelfPath(path)?.value;
         return typeof value === 'number' && Number.isFinite(value) ? value : null;
+    }
+
+    // Follow signalk-polar-management's in-process service, announced through the
+    // polarManagement property value. There is no npm dependency: without it, or without
+    // an active polar, the best VMGs come from the samples alone.
+    function discoverPolars() {
+        if (state.options.usePolars === false || typeof app.onPropertyValues !== 'function')
+            return;
+        const unsubscribe = app.onPropertyValues('polarManagement', (history) => {
+            const record = (history || []).findLast(entry => entry?.setter === 'signalk-polar-management');
+            const service = record?.value;
+            state.rawPolar = null;
+            if (service?.apiVersion === 1 && service.available === true &&
+                typeof service.activePolar === 'function' && typeof service.polar === 'function') {
+                state.polarService = {service, active: service.activePolar()};
+                app.debug('polar management service found');
+            } else {
+                state.polarService = null;
+                app.debug('polar management service not available');
+            }
+        });
+        if (typeof unsubscribe === 'function')
+            unsubscribes.push(unsubscribe);
+    }
+
+    // The active polar without the performance factor, as a speedAt(tws, twa) function in
+    // SI units, and the performance factor; or null when there is no active polar.
+    function activePolar() {
+        const polar = state.polarService;
+        if (!polar) return null;
+        try {
+            const description = polar.active.describe();
+            if (!description?.available) return null;
+            const {id, sailplanId, performanceFactor, twsAxis} = description;
+            if (state.rawPolar?.id !== id || state.rawPolar?.sailplanId !== sailplanId) {
+                const handle = polar.service.polar(id, sailplanId ? {sailplanId} : {});
+                state.rawPolar = {id, sailplanId, handle};
+            }
+            const handle = state.rawPolar.handle;
+            const speedAt = (tws, twa) => {
+                const value = handle.speedAt({tws, twa})?.value;
+                return Number.isFinite(value) ? value : null;
+            };
+            // The wind range the polar was measured over: ratios are only taken within it.
+            const axis = Array.isArray(twsAxis) ? twsAxis.filter(Number.isFinite) : [];
+            return {
+                speedAt,
+                performanceFactor: Number.isFinite(performanceFactor) ? performanceFactor : 1,
+                minTws: axis.length ? Math.min(...axis) : null,
+                maxTws: axis.length ? Math.max(...axis) : null,
+            };
+        } catch (err) {
+            app.debug('polar unavailable: ' + err);
+            return null;
+        }
+    }
+
+    // Look the polar up for the current wind and line, setting it for the best VMGs, and
+    // return what a sample taken now should be measured against: the raw polar VMG in each
+    // direction, and the boat's speed ratio (speed through the water over the polar speed
+    // at the angle sailed, or over the ground when there is no log or heading). Null
+    // without a polar or wind, when the samples alone are used.
+    function updatePolar(lineBearing, cog, sog) {
+        const polar = activePolar();
+        const tws = selfNumber('environment.wind.speedTrue');
+        const twd = selfNumber('environment.wind.directionTrue');
+        state.lastVmgInputs = {lineBearing, cog, sog, tws, twd, polar: !!polar};
+        if (!polar || tws === null || twd === null) {
+            setPolar(null);
+            return null;
+        }
+        const vmg = polarVmgs(polar.speedAt, tws, twd, lineBearing);
+        setPolar({vmg, performanceFactor: polar.performanceFactor});
+
+        // Outside the wind range of the polar it is extrapolated, and least to be trusted: a
+        // boat carrying its speed into a lull would score far above it. The polar is still
+        // used for the best VMG, but no ratios are taken.
+        const inRange = (polar.minTws === null || tws >= polar.minTws) &&
+            (polar.maxTws === null || tws <= polar.maxTws);
+        state.lastVmgInputs.ratiosTaken = inRange;
+        if (!inRange)
+            return null;
+
+        let speedRatio = null;
+        const stw = selfNumber('navigation.speedThroughWater');
+        const heading = selfNumber('navigation.headingTrue');
+        const speed = stw !== null && heading !== null ? stw : sog;
+        const course = stw !== null && heading !== null ? heading : cog;
+        if (Number.isFinite(speed) && Number.isFinite(course)) {
+            const twa = Math.abs(Math.atan2(Math.sin(course - twd), Math.cos(course - twd)));
+            const polarSpeed = polar.speedAt(tws, twa);
+            if (polarSpeed > 0)
+                speedRatio = speed / polarSpeed;
+            Object.assign(state.lastVmgInputs, {
+                speedSource: stw !== null && heading !== null ? 'water' : 'ground',
+                speed, course, twa, polarSpeed, speedRatio,
+            });
+        }
+        return {vmg, speedRatio};
     }
 
     function lengthOverall() {
@@ -868,7 +1028,7 @@ module.exports = (app) => {
             if (args.command === 'clear') {
                 // Throw away everything collected, not just the manual adjustments, so
                 // the estimate starts again from what the boat does next.
-                resetVmgSamples();
+                resetVmgSamples({pool: true});
                 publishBestVmg();
                 return complete(callback, 200, 'Cleared best VMG samples: OK');
             }
@@ -1253,12 +1413,14 @@ module.exports = (app) => {
                 return;
             }
             state.distanceToLine = distanceToLine;
+            state.lastLeg = {ocs, toZoneVz, perpToLineVx, closestEnd};
 
             // Collect VMG samples
             const cog = app.getSelfPath("navigation.courseOverGroundTrue")?.value;
             const sog = app.getSelfPath("navigation.speedOverGround")?.value;
+            const polar = updatePolar(startLine.bearing, cog, sog);
             if (cog != null && sog != null) {
-                collectVmgSamples(cog, sog, startLine.bearing, toZoneVz, perpToLineVx);
+                collectVmgSamples(cog, sog, startLine.bearing, toZoneVz, perpToLineVx, polar);
             }
             const ttl = computeTimeToLine(cog, sog, startLine.bearing, toZoneVz, perpToLineVx, ocs, closestEnd, state.timeToStart ?? 0);
             // Time to burn stands when OCS too: the time to line is then the time to get
@@ -1294,13 +1456,14 @@ module.exports = (app) => {
     }
 
     function processWind(twd) {
-        if (!twd) {
+        if (twd === undefined) {
             twd = app.getSelfPath('environment.wind.directionTrue');
             app.debug('TWD:' + JSON.stringify(twd));
             twd = twd ? twd.value : null;
         }
 
-        if (!twd)
+        // A TWD of 0 is a northerly, so test for a number rather than truthiness.
+        if (!Number.isFinite(twd))
             return;
 
         let nextTwa = null;
@@ -1436,6 +1599,8 @@ module.exports = (app) => {
                 minEffectiveVmg: (options.minEffectiveVmg ?? 0.5) * 0.514444,
                 maxDistance: options.maxDistance ?? 2000,
                 maxSamples: options.maxSamples ?? 600,
+                maxSampleAge: (options.maxSampleAge ?? 10) * 60,
+                maxPolarRatio: (options.maxPolarRatio ?? 120) / 100,
                 percentile: options.percentile ?? 0.9
             }, app);
 
@@ -1449,6 +1614,7 @@ module.exports = (app) => {
             app.debug(`signalk-racer ${pluginVersion} loaded from ${__dirname}`);
 
             state.options = options;
+            discoverPolars();
             state.lineActive = true;
             state.wayPointsScanned = false;
             state.timeToStart = options.timer;
@@ -1663,11 +1829,43 @@ module.exports = (app) => {
             unsubscribes.length = 0;
             clearTimer();
             state.startLine = null;
+            state.polarService = null;
+            state.rawPolar = null;
+            setPolar(null);
         },
 
         schema: () => racerSchema,
 
         getOpenApi: () => require('./openapi.json'),
+
+        // GET /plugins/signalk-racer/vmg: everything behind the best VMGs, for the
+        // webapp's VMG detail page.
+        registerWithRouter: (router) => {
+            router.get('/vmg', (req, res) => {
+                const inputs = state.lastVmgInputs;
+                const inPlay = !!state.startLine && state.distanceToLine != null;
+                const detail = getVmgDetail(inputs?.cog, inputs?.sog, inputs?.lineBearing);
+                // The polar ratio being sailed right now in each direction.
+                for (const d of Object.values(detail.directions))
+                    d.currentRatio = d.polarVmg && d.currentVmg != null ? d.currentVmg / d.polarVmg : null;
+                const leg = state.lastLeg;
+                res.json({
+                    pluginVersion,
+                    line: state.startLine ? {bearing: state.startLine.bearing, length: state.startLine.length} : null,
+                    inPlay,
+                    distanceToLine: state.distanceToLine ?? null,
+                    legs: inPlay && leg ? {
+                        toLine: leg.ocs ? 'fromCourseSide' : 'toCourseSide',
+                        alongLine: leg.toZoneVz > 0 ? (leg.closestEnd === 'port' ? 'toStbEnd' : 'toPortEnd') : null,
+                        toLineDistance: leg.perpToLineVx,
+                        alongLineDistance: leg.toZoneVz,
+                    } : null,
+                    effectiveVmg: state.publishedEffectiveVmg,
+                    inputs: inputs ?? null,
+                    ...detail,
+                });
+            });
+        },
     };
 };
 

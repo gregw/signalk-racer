@@ -67,7 +67,7 @@
     "/signalk/v1/api/vessels/self/navigation/racing/setBestVmg": {
       "put": {
         "summary": "Set, Adjust or Reset a Best VMG",
-        "description": "Override one of the best VMGs used to estimate time to line, either absolutely (`value`) or relative to its current value (`delta`), both in m/s. An override stands in for the collected percentile, but the VMG the boat is actually sailing always wins if it is better. Overrides are cleared when the start timer reaches zero, when the start line changes, and by the `reset` command.",
+        "description": "Override one of the best VMGs used to estimate time to line, either absolutely (`value`) or relative to its current value (`delta`), both in m/s. An override stands in for the collected estimate, but the VMG the boat is actually sailing always wins if it is better. With a polar, an override is kept as a factor of the polar VMG at the time it is set, so it follows the wind. Overrides are cleared when the start timer reaches zero, when the start line changes, and by the `reset` command.",
         "requestBody": {
           "required": true,
           "content": {
