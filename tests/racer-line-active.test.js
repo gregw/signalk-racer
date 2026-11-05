@@ -16,15 +16,18 @@ function waypoint(name, position) {
 
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
-function startPlugin() {
-    const selfPaths = {'navigation.position': {value: POSITION}};
+function startPlugin({position = POSITION, withWaypoints = true} = {}) {
+    const selfPaths = position ? {'navigation.position': {value: position}} : {};
     const published = {};
-    const waypoints = {
+    const waypoints = {};
+    const addWaypoints = () => Object.assign(waypoints, {
         a: waypoint('startPin', PIN),
         b: waypoint('startBoat', BOAT),
         c: waypoint('clubPin', CLUB_PIN),
         d: waypoint('clubBoat', CLUB_BOAT),
-    };
+    });
+    if (withWaypoints)
+        addWaypoints();
     const subscriptions = {};
     let listed = 0;
     const app = {
@@ -69,8 +72,44 @@ function startPlugin() {
         subscriptions['resources.waypoints.*']({updates: [{values: []}]});
         await settle();
     };
-    return {plugin, published, put, moved, waypointsChanged, listed: () => listed};
+    return {plugin, published, put, moved, waypointsChanged, addWaypoints, listed: () => listed};
 }
+
+describe('racer line at start', () => {
+    test('the line is published from its waypoints without a position', async () => {
+        const {plugin, published} = startPlugin({position: null});
+        await settle();
+        expect(published['navigation.racing.startLinePort']).toEqual(PIN);
+        expect(published['navigation.racing.startLineStb']).toEqual(BOAT);
+        expect(published['navigation.racing.startLineLength']).toEqual(expect.any(Number));
+        expect(published['navigation.racing.startLineBearing']).toEqual(expect.any(Number));
+        expect(published['navigation.racing.distanceStartline']).toBeUndefined();
+        plugin.stop();
+    });
+
+    test('selecting the line in use while it has no ends looks for them again', async () => {
+        const {plugin, published, put, addWaypoints, listed} = startPlugin({position: null, withWaypoints: false});
+        await settle();
+        expect(published['navigation.racing.startLinePort']).toBeNull();
+        addWaypoints();
+        const before = listed();
+        await put('setStartLineName', {startLineName: null});
+        await settle();
+        expect(listed()).toBe(before + 1);
+        expect(published['navigation.racing.startLinePort']).toEqual(PIN);
+        plugin.stop();
+    });
+
+    test('selecting the line in use while it has its ends does not look again', async () => {
+        const {plugin, put, listed} = startPlugin({position: null});
+        await settle();
+        const before = listed();
+        await put('setStartLineName', {startLineName: null});
+        await settle();
+        expect(listed()).toBe(before);
+        plugin.stop();
+    });
+});
 
 describe('racer line deactivation', () => {
     test('the line is active when the plugin starts', async () => {

@@ -754,7 +754,8 @@ module.exports = (app) => {
                 state.startLineName = name;
                 if (state.lineActive)
                     deactivateLine();
-            } else if (!state.lineActive || state.startLineName !== name) {
+            } else if (!state.lineActive || state.startLineName !== name || !state.startLine) {
+                // Selecting the line in use while it has no ends looks for them again.
                 state.lineActive = true;
                 state.startLineName = name;
                 state.startLine = null;
@@ -1453,6 +1454,9 @@ module.exports = (app) => {
             state.timeToStart = options.timer;
             state.startLine = getStartLine();
             publishLineList();
+            // Look the line up from its waypoints now, rather than waiting for a position
+            // that may never come, so its ends are published either way.
+            findLineAndThenProcess(undefined, true);
 
             // Is the timer already started
             {

@@ -7,6 +7,9 @@
  + The webapp's line selector has a "No line" choice, and follows a line selected or
    deactivated elsewhere
  + The effective VMGs are cleared with the other line values when the line goes out of play
+ + Fixed the line's ends not being published until a position arrived. The line is now looked
+   up from its waypoints when the plugin starts, and selecting the line in use while it has no
+   ends looks for them again
 
 ## 1.3.8 Bow position without a heading
  + Fixed the bow being placed north of the position when the heading drops out. The server

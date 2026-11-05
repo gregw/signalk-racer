@@ -31,6 +31,8 @@ function startPlugin(selfPaths, server = {}) {
     const plugin = require('../index')(app);
     plugin.start({ startLinePort: 'startPin', startLineStb: 'startBoat', timer: 300, lines: [] });
     const ping = async () => {
+        // Let the lookup of the line's waypoints at start finish first.
+        await new Promise(resolve => setImmediate(resolve));
         await app.putHandlers['navigation.racing.setStartLine']('vessels.self', 'navigation.racing.setStartLine', { end: 'port' });
         return published['navigation.racing.startLinePort'];
     };
