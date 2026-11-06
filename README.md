@@ -61,9 +61,12 @@ Used when present; without them the related values are not published, or a fallb
   Without them, the course and speed over ground are used.
 - **[Freeboard-SK](https://www.npmjs.com/package/@signalk/freeboard-sk)**, or another chart
   plotter using the server's Course API, to activate a route for the next leg heading and TWA.
-- **[signalk-polar-performance](https://www.npmjs.com/package/signalk-polar-performance)**
-  _(future)_, not used yet. Its beat and gybe angles (`performance.beatAngle`,
-  `performance.gybeAngle`) will be needed to work out the time and distance to lay a mark.
+- **[signalk-polar-performance](https://www.npmjs.com/package/signalk-polar-performance)**,
+  or anything else publishing the beat and gybe angles (`performance.beatAngle`,
+  `performance.gybeAngle`), for the
+  [start VMG zone](https://github.com/gregw/signalk-racer/wiki/Start-VMG-Zone). Without them the
+  angles come from the polar, or the zone stays at the default fixed 45°. They will also be
+  needed to work out the time and distance to lay a mark.
 - **Bearing and distance to the next waypoint** _(future)_, not used yet, for the time and
   distance to lay. These can come from the server's Course API (set by Freeboard-SK or another
   plotter), or from a chart plotter's NMEA feed (e.g. 0183 `RMB`/`BWC`, NMEA 2000 PGN 129284)

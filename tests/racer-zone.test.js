@@ -15,7 +15,7 @@ function boat(overshoot, across) {
     return { toEnd, angle };
 }
 
-describe('start zone distances', () => {
+describe('start VMG zone distances', () => {
     test('inside the zone only the perpendicular distance counts', () => {
         // Abeam the line, 50m off it: no along-line leg at all.
         const { toEnd, angle } = boat(-30, 50);
@@ -74,13 +74,26 @@ describe('start zone distances', () => {
         expect(d.distanceToLine).toBeCloseTo(-35, 1);
     });
 
-    test('OCS outside the zone keeps the L and the sign', () => {
-        const d = startZoneDistances(boat(150, -60).toEnd, boat(150, -60).angle);
+    test('OCS beyond the end: back to the clearance, then along into the zone', () => {
+        // 150m beyond the end, 60m on the course side, back to 30m behind the line: the
+        // 45 degree zone stands 30m beyond the end at that depth.
+        const d = startZoneDistances(boat(150, -60).toEnd, boat(150, -60).angle, 45, 30);
         expect(d.ocs).toBe(true);
         expect(d.inStartZone).toBe(false);
-        expect(d.toZoneVz).toBeCloseTo(90, 6);
         expect(d.perpToLineVx).toBeCloseTo(60, 6);
-        expect(d.distanceToLine).toBeCloseTo(-150, 1);
+        expect(d.toZoneVz).toBeCloseTo(120, 6);
+        expect(d.clearance).toBe(30);
+        expect(d.distanceToLine).toBeCloseTo(-60, 1);
+    });
+
+    test('the zone edge follows the transition line angle', () => {
+        const {toEnd, angle} = boat(120, 90);
+        // At 35 degrees the zone stands 128m beyond the end at 90m off: inside it.
+        expect(startZoneDistances(toEnd, angle, 35).toZoneVz).toBe(0);
+        // At 60 degrees, 52m: 68m to sail along the line.
+        expect(startZoneDistances(toEnd, angle, 60).toZoneVz).toBeCloseTo(120 - 90 / Math.tan(Math.PI / 3), 6);
+        // At 90 degrees the zone is just the line's span.
+        expect(startZoneDistances(toEnd, angle, 90).toZoneVz).toBeCloseTo(120, 6);
     });
 });
 
@@ -115,12 +128,27 @@ describe('effective vmg', () => {
         expect(effectiveVmg(null, null, 270, 50, false, 'stb').alongLine).toBeCloseTo(3, 6);
     });
 
-    test('OCS takes the VMG back across the line', () => {
+    test('OCS: away from the line on fromCourseSide, back to it on toCourseSide', () => {
         resetVmgSamples();
         collect('vmgToCourseSide', 4);
         collect('vmgFromCourseSide', 2);
-        expect(effectiveVmg(null, null, 270, 0, true, 'stb').toLine).toBeCloseTo(2, 6);
-        expect(effectiveVmg(null, null, 270, 0, false, 'stb').toLine).toBeCloseTo(4, 6);
+        const ocs = effectiveVmg(null, null, 270, 0, true, 'stb');
+        expect(ocs.awayFromLine).toBeCloseTo(2, 6);
+        expect(ocs.toLine).toBeCloseTo(4, 6);
+        const behind = effectiveVmg(null, null, 270, 0, false, 'stb');
+        expect(behind.awayFromLine).toBe(0);
+        expect(behind.toLine).toBeCloseTo(4, 6);
+    });
+
+    test('OCS time to line: away to the clearance, along into the zone, then back to the line', () => {
+        const { computeTimeToLine } = require('../racer');
+        resetVmgSamples();
+        collect('vmgToCourseSide', 4);
+        collect('vmgFromCourseSide', 2);
+        collect('vmgToPortEnd', 5);
+        // 20m over, 30m clearance: 50m at 2; 100m along at 5; 30m back at 4.
+        const ttl = computeTimeToLine(null, null, 270, 100, 20, true, 'stb', 0, 30);
+        expect(ttl).toBeCloseTo(50 / 2 + 100 / 5 + 30 / 4, 6);
     });
 
     test('matches what computeTimeToLine divides by', () => {

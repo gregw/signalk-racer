@@ -502,54 +502,149 @@ function getVmgDetail(cog, sog, lineBearing) {
 }
 
 /**
- * Resolve a boat's position relative to the start line into the two distances the time
- * to line is built from.
+ * The best VMG headings towards the course side, in degrees from "up" (perpendicular to
+ * the line, towards the course side), positive towards the starboard end: close hauled
+ * on each tack, at the gybe angle on each gybe, and straight up when its TWA lies between
+ * the beat and gybe angles. Headings 90 degrees or more from up make no progress towards
+ * the line, and are dropped.
  *
- * The start zone is a 45 degree wedge off each end of the line. Inside it the line can be
- * laid, so the only distance that counts is the perpendicular one. Outside it the boat
- * must first run parallel to the line until it reaches the wedge, and from that corner
- * the 45 degree approach makes good the remaining along-line distance at the same time as
- * the perpendicular one - so the along leg is charged only as far as the wedge, and the
- * two legs together form an L whose corner sits on the 45.
+ * @param {number} w The true wind direction (from), in degrees relative to up.
+ * @param {number} beat The beat angle (TWA), in degrees.
+ * @param {number} gybe The gybe angle (TWA), in degrees.
+ */
+function bestVmgHeadings(w, beat, gybe) {
+    const norm = (x) => ((x % 360) + 540) % 360 - 180;
+    const twaUp = Math.abs(norm(w));
+    const headings = [w - beat, w + beat, w + 180 - (180 - gybe), w + 180 + (180 - gybe)]
+        .map(norm)
+        .filter(h => Math.abs(h) < 90);
+    if (twaUp >= beat && twaUp <= gybe) headings.push(0);
+    return headings;
+}
+
+/**
+ * The start VMG zone's transition line angles: for each end, the angle in degrees below
+ * the line's extension beyond that end, from 90 (straight down from the end) to the cap.
+ *
+ * A boat beyond an end sails its best VMG along the line towards the zone, then turns onto
+ * the heading that lays the end; the transition line is that heading's line through the
+ * end. Of the best VMG headings that turn in towards the end, the one closest to sailing
+ * along the line is used, as it is the one the boat is nearest to already sailing. With no
+ * such heading the angle is 90. No line is ever flatter than the cap.
+ *
+ * @param {number} lineBearing Bearing of the line, starboard end to port end, in degrees.
+ * @param {number} twd True wind direction, in radians.
+ * @param {number} beat Beat angle (TWA for the best VMG upwind), in radians.
+ * @param {number} gybe Gybe angle (TWA for the best VMG downwind), in radians.
+ * @param {number} cap The flattest a transition line can be, in degrees.
+ * @returns {{port: number, stb: number}|null} Degrees, or null without usable inputs.
+ */
+function startVmgZoneAngles(lineBearing, twd, beat, gybe, cap = 35) {
+    if (![lineBearing, twd, beat, gybe].every(Number.isFinite)) return null;
+    if (!(beat > 0 && gybe > beat && gybe < Math.PI)) return null;
+    // Up: towards the course side, 90 degrees clockwise of the line's bearing.
+    const up = lineBearing + 90;
+    const w = toDegrees(twd) - up;
+    const headings = bestVmgHeadings(w, toDegrees(beat), toDegrees(gybe));
+    const towardsStb = headings.filter(h => h > 0);
+    const towardsPort = headings.filter(h => h < 0);
+    // Beyond the pin a boat turns in towards the starboard end (h > 0), and vice versa.
+    const port = towardsStb.length ? 90 - Math.max(...towardsStb) : 90;
+    const stb = towardsPort.length ? 90 + Math.min(...towardsPort) : 90;
+    const capped = (theta) => Math.min(90, Math.max(cap, theta));
+    return {port: capped(port), stb: capped(stb)};
+}
+
+/**
+ * The beat and gybe angles from a polar: the true wind angles of the best VMG upwind and
+ * downwind, for the given true wind speed.
+ *
+ * @param {function(number, number): number|null} speedAt Boat speed (m/s) for TWS (m/s)
+ *   and TWA (radians).
+ * @param {number} tws True wind speed, m/s.
+ * @returns {{beat: number, gybe: number}|null} Radians, or null when the polar gives none.
+ */
+function polarTackGybeAngles(speedAt, tws) {
+    let beat = null, up = 0, gybe = null, down = 0;
+    for (let deg = 20; deg <= 180; deg++) {
+        const twa = toRadians(deg);
+        const speed = speedAt(tws, twa);
+        if (!Number.isFinite(speed) || speed <= 0) continue;
+        const vmg = speed * Math.cos(twa);
+        if (deg <= 90 && vmg > up) { up = vmg; beat = twa; }
+        if (deg >= 90 && -vmg > down) { down = -vmg; gybe = twa; }
+    }
+    return beat !== null && gybe !== null ? {beat, gybe} : null;
+}
+
+/**
+ * Resolve a boat's position relative to the start line into the distances the time to
+ * line is built from.
+ *
+ * The start VMG zone lies below the line, between a transition line off each end at
+ * `theta` degrees below the line's extension. Inside it the boat sails its best VMG to the
+ * line, so the only distance that counts is the perpendicular one. Outside it the boat
+ * first sails along the line out to the transition line: an L whose corner sits on it.
+ *
+ * There is no zone on the course side. A boat on the course side of the line, or of its
+ * extension, must first get back behind it, out to `clearance` metres on the pre-start
+ * side; from there it is charged as any other boat: along the line into the zone if it is
+ * beyond the end, then back up to the line.
  *
  * The L is a distance to be made good, not the track a boat sails.
  *
  * @param {number} toEnd Distance from the boat to the closest end of the line, in metres.
  * @param {number} angle Signed angle at that end, in degrees, between the line (towards
  *   the other end) and the boat. Negative when the boat is on the course side (OCS).
+ * @param {number} [theta=45] The transition line's angle at that end, in degrees.
+ * @param {number} [clearance=0] How far behind the line an OCS boat returns to, in metres.
  * @returns {{ocs: boolean, inStartZone: boolean, perpToLineVx: number, toZoneVz: number,
- *   toLine: number, distanceToLine: number}}
+ *   clearance: number, toLine: number, distanceToLine: number}} For an OCS boat,
+ *   `perpToLineVx` is its distance on the course side and `toZoneVz` the along leg from
+ *   the clearance.
  */
-function startZoneDistances(toEnd, angle) {
+function startZoneDistances(toEnd, angle, theta = 45, clearance = 0) {
     const anglePBV = Math.abs(angle);
     const ocs = angle < 0;
-    const inStartZone = anglePBV <= 135;
     const angleVBx = 180 - anglePBV;
 
     // Perpendicular distance to the line, or to its extension past the end.
     const perpToLineVx = toEnd * Math.sin(toRadians(angleVBx));
-    // Distance parallel to the line from the boat out to the wedge. The wedge is at 45
-    // degrees, so at the boat's own perpendicular offset it stands exactly that offset
-    // beyond the end: the along distance to reach it is the overshoot less the offset.
-    // This reaches zero exactly at anglePBV == 135, so the pair is continuous across the
-    // zone boundary.
-    const overshoot = toEnd * Math.sin(toRadians(90 - angleVBx));
-    const toZoneVz = inStartZone ? 0 : Math.max(0, overshoot - perpToLineVx);
+    // Distance beyond the end along the line's extension: negative inside the line's span.
+    const overshoot = toEnd * Math.cos(toRadians(angleVBx));
+    // How far beyond the end the transition line stands at a given depth behind the line.
+    const zoneAt = (depth) => theta >= 90 ? 0 : depth / Math.tan(toRadians(theta));
 
+    if (ocs) {
+        const toZoneVz = Math.max(0, overshoot - zoneAt(clearance));
+        const toLine = Math.round(10 * perpToLineVx) / 10;
+        return {
+            ocs,
+            inStartZone: false,
+            perpToLineVx,
+            toZoneVz,
+            clearance,
+            toLine,
+            distanceToLine: -toLine,
+        };
+    }
+
+    const toZoneVz = Math.max(0, overshoot - zoneAt(perpToLineVx));
     // The length of the L, which is what the visualisation draws.
     const toLine = Math.round(10 * (toZoneVz + perpToLineVx)) / 10;
     return {
         ocs,
-        inStartZone,
+        inStartZone: toZoneVz === 0,
         perpToLineVx,
         toZoneVz,
+        clearance: 0,
         toLine,
-        distanceToLine: ocs ? -toLine : toLine
+        distanceToLine: toLine,
     };
 }
 
 /**
- * The two VMGs the time to line is actually divided by: the collected best for each
+ * The VMGs the time to line is actually divided by: the collected best for each
  * direction, or whatever the boat is achieving right now if that is better.
  *
  * An adjustment or a collected sample stands in for what the boat can do, but the boat
@@ -557,8 +652,10 @@ function startZoneDistances(toEnd, angle) {
  * it is larger. Published as `navigation.racing.effectiveVmg.*` so a client can show the
  * same legs the time to line was built from without re-deriving this.
  *
- * @returns {{toLine: number, alongLine: number}} Both in m/s. `alongLine` is 0 when the
- *   boat is inside the start zone, there being no along-line leg to sail.
+ * @returns {{toLine: number, alongLine: number, awayFromLine: number}} All in m/s.
+ *   `toLine` is towards the course side; `alongLine` is 0 when there is no along leg to
+ *   sail; `awayFromLine` is 0 unless the boat is OCS, when it is the VMG back away from
+ *   the course side.
  */
 function effectiveVmg(cog, sog, lineBearing, toZoneVz, ocs, closestEnd) {
     let vmgNormalSigned = 0;
@@ -574,11 +671,15 @@ function effectiveVmg(cog, sog, lineBearing, toZoneVz, ocs, closestEnd) {
         }
     }
 
-    // Across the line. If OCS the required direction is the opposite one: back over the
-    // line from the course side.
-    const histNormal = bestVmg(ocs ? vmgState.vmgFromCourseSide : vmgState.vmgToCourseSide);
-    const instNormal = ocs ? -vmgNormalSigned : vmgNormalSigned;
-    const toLine = Math.max(histNormal || 0, instNormal || 0, cfg.minEffectiveVmg);
+    // Across the line, towards the course side. When OCS this is the last leg, back up to
+    // the line from the clearance, so what the boat is doing right now does not count.
+    const histNormal = bestVmg(vmgState.vmgToCourseSide);
+    const toLine = Math.max(histNormal || 0, ocs ? 0 : (vmgNormalSigned || 0), cfg.minEffectiveVmg);
+
+    // When OCS, the first leg: back away from the course side, out to the clearance.
+    const awayFromLine = ocs
+        ? Math.max(bestVmg(vmgState.vmgFromCourseSide) || 0, -vmgNormalSigned || 0, cfg.minEffectiveVmg)
+        : 0;
 
     // Along the line, towards the zone entry - and only when there is a leg to sail.
     let histParallel = 0;
@@ -600,32 +701,40 @@ function effectiveVmg(cog, sog, lineBearing, toZoneVz, ocs, closestEnd) {
         ? Math.max(histParallel || 0, instParallel || 0, cfg.minEffectiveVmg)
         : Math.max(histParallel || 0, instParallel || 0);
 
-    return {toLine, alongLine};
+    return {toLine, alongLine, awayFromLine};
 }
 
 /**
- * Time to reach the start line, over the L that startZoneDistances resolves: the along
- * leg out to the 45 degree wedge, then the perpendicular one, each at its own effective
- * VMG.
+ * Time to reach the start line, over the legs that startZoneDistances resolves, each at
+ * its own effective VMG: along the line out to the transition line, then across to the
+ * line. When OCS, first back away from the course side out to the clearance, then along
+ * the line into the zone, then back up to the line from the clearance.
  */
-function computeTimeToLine(cog, sog, lineBearing, toZoneVz, perpToLineVx, ocs, closestEnd, timeToStart = 0) {
+function computeTimeToLine(cog, sog, lineBearing, toZoneVz, perpToLineVx, ocs, closestEnd,
+                           timeToStart = 0, clearance = 0) {
     if (cog != null && sog != null && toRadians(lineBearing) === null) {
         return 0;
     }
 
-    const {toLine: vmgEffNormal, alongLine: vmgEffectParallel} =
+    const {toLine, alongLine, awayFromLine} =
         effectiveVmg(cog, sog, lineBearing, toZoneVz, ocs, closestEnd);
 
     let ttl = 0;
+    const across = ocs ? clearance : perpToLineVx;
 
-    // Outside the start zone: first go along the line out to the wedge.
-    if (toZoneVz > 0 && vmgEffectParallel > 0) {
-        ttl += toZoneVz / vmgEffectParallel;
+    // When OCS: back across the line (or its extension) and out to the clearance.
+    if (ocs && awayFromLine > 0) {
+        ttl += (perpToLineVx + clearance) / awayFromLine;
+    }
+
+    // Outside the start VMG zone: along the line out to the transition line.
+    if (toZoneVz > 0 && alongLine > 0) {
+        ttl += toZoneVz / alongLine;
     }
 
     // Then across to the line itself.
-    if (perpToLineVx > 0 && vmgEffNormal > 0) {
-        ttl += perpToLineVx / vmgEffNormal;
+    if (across > 0 && toLine > 0) {
+        ttl += across / toLine;
     }
 
     // If we still somehow have zero (no speed or distances), just return time to start so TTB logic doesn't explode.
@@ -646,6 +755,9 @@ module.exports = {
     getVmgDetail,
     computeTimeToLine,
     startZoneDistances,
+    startVmgZoneAngles,
+    polarTackGybeAngles,
+    bestVmgHeadings,
     effectiveVmg,
     vmgNames,
     getBestVmg,

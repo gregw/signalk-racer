@@ -16,7 +16,17 @@
  + Webapp: the COURSE page, with a row for every point of the active (or any) route:
    the bearing and distance from here, the leg heading and length, and the TWA on each leg in
    the current wind. BTW/DTW from the Course API or over NMEA are shown for the next point
- + Fixed the line bias and next leg TWA not being published in a northerly
+ + The start VMG zone is taken from the boat's tack and gybe angles (`performance.beatAngle` and
+  `performance.gybeAngle`, or the polar's), never flatter than `startVmgZoneCap` (35°), rather
+  than a fixed 45° off each end. Turn off `useTackGybeAngles` to keep the 45°. The angles are
+  published as `navigation.racing.startVmgZone.portAngle` and `.stbAngle`. See the
+  [Start VMG Zone](https://github.com/gregw/signalk-racer/wiki/Start-VMG-Zone) wiki page
++ OCS: there is no longer a zone on the course side. An OCS boat's time to line is now back away
+  from the line to `ocsClearance` boat lengths (3) behind it, along into the zone, then back up
+  to the line, rather than just back to the line. The away leg's VMG is published as
+  `navigation.racing.effectiveVmg.awayFromLine`, the clearance as
+  `navigation.racing.startVmgZone.ocsClearance`
++ Fixed the line bias and next leg TWA not being published in a northerly
  + Fixed the next leg heading and TWA not following the active route on servers that keep the
    course only in the v2 Course API: the active route is now read from the Course API
 

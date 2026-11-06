@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72">
   <rect width="72" height="72" rx="12" fill="#14202e"/>
-  <!-- the line extended, and the start zone wedge on the pre-start side -->
+  <!-- the line extended, and the start VMG zone wedge on the pre-start side -->
   <g stroke="#6b7884" stroke-width="1.6" stroke-dasharray="3 3" fill="none">
     <path d="M0 27.5 H72"/>
     <path d="M12 27.5 L-12 51.5"/>

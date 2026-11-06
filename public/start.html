@@ -158,6 +158,11 @@
         twd: null,
         effVmgToLine: null,
         effVmgAlongLine: null,
+        effVmgAwayFromLine: null,
+        // The start VMG zone's transition line angles (rad) and the OCS clearance (m).
+        zonePortAngle: null,
+        zoneStbAngle: null,
+        ocsClearance: null,
         lineLength: null,
         lineBearing: null,
         bestVmg: {toCourseSide: null, fromCourseSide: null, toPortEnd: null, toStbEnd: null},
@@ -288,6 +293,22 @@
                                     break;
                                 case "navigation.racing.effectiveVmg.alongLine":
                                     nav.effVmgAlongLine = value.value;
+                                    scheduleRender();
+                                    break;
+                                case "navigation.racing.effectiveVmg.awayFromLine":
+                                    nav.effVmgAwayFromLine = value.value;
+                                    scheduleRender();
+                                    break;
+                                case "navigation.racing.startVmgZone.portAngle":
+                                    nav.zonePortAngle = value.value;
+                                    scheduleRender();
+                                    break;
+                                case "navigation.racing.startVmgZone.stbAngle":
+                                    nav.zoneStbAngle = value.value;
+                                    scheduleRender();
+                                    break;
+                                case "navigation.racing.startVmgZone.ocsClearance":
+                                    nav.ocsClearance = value.value;
                                     scheduleRender();
                                     break;
                                 case "design.length.overall":

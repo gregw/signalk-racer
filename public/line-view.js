@@ -148,7 +148,9 @@
             let minA = Math.min.apply(null, ends.concat([boat ? boat.a - pad : 0]));
             let maxA = Math.max.apply(null, ends.concat([boat ? boat.a + pad : geo.length]));
             const minC = Math.min(0, boat ? boat.c - pad : 0);
-            const maxC = Math.max(0, boat ? boat.c + pad : 0);
+            // When OCS, the clearance behind the line the boat returns to is in frame too.
+            const clearance = boat && boat.c < 0 ? (nav.ocsClearance != null ? nav.ocsClearance : 30) : 0;
+            const maxC = Math.max(0, boat ? boat.c + pad : 0, clearance + pad / 2);
 
             // Keep a usable run of the line itself in frame, measured on the line.
             const wanted = Math.min(LINE_IN_FRAME_LENGTHS * boatReach(nav), geo.length);
@@ -382,73 +384,105 @@
         }
 
         /**
-         * The approach the time to line is computed over: along the line into the start
-         * zone, then across to the line, as dimension lines - a distance to be made good,
-         * not a course to steer - plus where the boat reaches along them at the gun.
+         * The start VMG zone's transition line angles, in radians below the line's
+         * extension, as the plugin publishes them, or the default fixed 45 degrees.
+         */
+        function zoneAngles(nav) {
+            const ok = (v) => typeof v === 'number' && v > 0 && v <= Math.PI / 2;
+            return {
+                port: ok(nav.zonePortAngle) ? nav.zonePortAngle : Math.PI / 4,
+                stb: ok(nav.zoneStbAngle) ? nav.zoneStbAngle : Math.PI / 4,
+            };
+        }
+
+        /**
+         * The approach the time to line is computed over, as dimension lines - a distance
+         * to be made good, not a course to steer - plus where the boat reaches along them
+         * at the gun: along the line into the start VMG zone, then across to the line.
+         * When OCS, first back away from the course side to the clearance behind the line.
          */
         function buildApproach(nav, geo, sx, sy, scale, W) {
             const boat = geo.boat;
             const L = geo.length, a = boat.a, c = boat.c;
             const ocs = c < 0, across = Math.abs(c);
+            const clearance = ocs ? (nav.ocsClearance != null ? nav.ocsClearance : 30) : 0;
+            // The depth behind the line the along leg and the final leg are sailed from.
+            const depth = ocs ? clearance : c;
 
             // How far past an end the boat lies, and which way it must run to get back.
             let overshoot = 0, beyondPort = false;
             if (a > L) { overshoot = a - L; beyondPort = true; }
             else if (a < 0) { overshoot = -a; }
-            // Inside the 45 degree wedge the zone leg vanishes: the boat closes straight
-            // across. Outside it, the corner sits on the wedge.
-            const toZone = Math.max(0, overshoot - across);
-            const cornerA = toZone > 0 ? (beyondPort ? L + across : -across) : a;
+            // The transition line stands this far beyond the end at that depth.
+            const angles = zoneAngles(nav);
+            const theta = beyondPort ? angles.port : angles.stb;
+            const zoneAt = theta >= Math.PI / 2 - 1e-6 ? 0 : depth / Math.tan(theta);
+            const toZone = Math.max(0, overshoot - zoneAt);
+            const cornerA = toZone > 0 ? (beyondPort ? L + zoneAt : -zoneAt) : a;
 
             const parallelName = beyondPort ? 'toStbEnd' : 'toPortEnd';
-            const normalName = ocs ? 'fromCourseSide' : 'toCourseSide';
             const parallel = effectiveVmg(nav, nav.effVmgAlongLine, parallelName, geo.bearing);
-            const normal = effectiveVmg(nav, nav.effVmgToLine, normalName, geo.bearing);
+            const normal = effectiveVmg(nav, nav.effVmgToLine, 'toCourseSide', geo.bearing);
+            const away = ocs ? effectiveVmg(nav, nav.effVmgAwayFromLine, 'fromCourseSide', geo.bearing) : 0;
 
-            // The two labels meet at the corner, so each goes on the side of its own leg
-            // facing away from the other. When both legs are short both labels want the
-            // same outside quarter, so the zone label moves round to the line's side.
+            // The legs in the order they are sailed, each with the VMG it is divided by.
+            const legs = [], walk = [];
+            if (ocs) {
+                legs.push(buildLeg(sx(a), sy(c), sx(a), sy(depth), false, Math.round(across + clearance) + 'm',
+                    'Back behind the line, to the clearance', W, undefined));
+                walk.push({from: [a, c], to: [a, depth], vmg: away});
+            }
             const zoneLabel = Math.round(toZone) + 'm';
-            const acrossLabel = Math.round(across) + 'm';
+            const acrossLabel = Math.round(Math.abs(depth)) + 'm';
             const towardsBoat = toZone > 0 ? Math.sign(sx(a) - sx(cornerA)) : 0;
-            const towardsLine = across > 0 ? Math.sign(sy(0) - sy(c)) : 0;
+            const towardsLine = depth !== 0 ? Math.sign(sy(0) - sy(depth)) : 0;
             const zoneShort = !legRoomy(Math.abs(sx(a) - sx(cornerA)), zoneLabel);
-            const acrossShort = !legRoomy(Math.abs(sy(0) - sy(c)), acrossLabel);
+            const acrossShort = !legRoomy(Math.abs(sy(0) - sy(depth)), acrossLabel);
             const zoneSide = towardsLine === 0 ? undefined
                 : zoneShort && acrossShort ? towardsLine : -towardsLine;
             const acrossSide = towardsBoat === 0 ? undefined : -towardsBoat;
-
-            const legs = [];
+            let zoneLeg = null, acrossLeg = null;
             if (toZone > 0) {
-                legs.push(buildLeg(sx(a), sy(c), sx(cornerA), sy(c), true, zoneLabel,
-                    'Along the line to the start zone', W, zoneSide));
+                zoneLeg = buildLeg(sx(a), sy(depth), sx(cornerA), sy(depth), true, zoneLabel,
+                    'Best VMG to the start VMG zone', W, zoneSide);
+                legs.push(zoneLeg);
+                walk.push({from: [a, depth], to: [cornerA, depth], vmg: parallel});
             }
-            // Only a leg with another after it leads; it is drawn in its own shade.
-            if (toZone > 0 && across > 0) legs[0].leading = true;
-            if (across > 0) {
-                legs.push(buildLeg(sx(cornerA), sy(c), sx(cornerA), sy(0), false, acrossLabel,
-                    'Across to the line', W, acrossSide));
+            if (depth > 0) {
+                acrossLeg = buildLeg(sx(cornerA), sy(depth), sx(cornerA), sy(0), false, acrossLabel,
+                    'Best VMG to the line', W, acrossSide);
+                legs.push(acrossLeg);
+                walk.push({from: [cornerA, depth], to: [cornerA, 0], vmg: normal});
             }
-            if (legs.length === 2) separateLegLabels(legs[0], legs[1], towardsLine);
+            // Every leg with another after it leads; it is drawn in its own shade.
+            for (let i = 0; i < legs.length - 1; i++) legs[i].leading = true;
+            if (zoneLeg && acrossLeg) separateLegLabels(zoneLeg, acrossLeg, towardsLine);
 
             // Where the boat reaches at the gun, walking those legs at those VMGs.
             // A leg with no VMG behind it costs no time, as computeTimeToLine has it.
             let gun = null;
             const tts = nav.timeToStart;
             if (nav.timerRunning && tts != null && tts > 0) {
-                const alongTime = parallel > 0 ? toZone / parallel : 0;
-                let gunA, gunC, ok = true;
-                if (tts <= alongTime) {
-                    const run = parallel * tts;
-                    gunA = beyondPort ? a - run : a + run;
-                    gunC = c;
-                } else if (normal > 0) {
-                    const run = Math.min(normal * (tts - alongTime),
-                        across + 400 / Math.max(scale, 1e-6));
-                    gunA = cornerA;
-                    gunC = ocs ? c + run : c - run;
-                } else { ok = false; }
-                if (ok) gun = {x: sx(gunA), y: sy(gunC)};
+                let left = tts, at = [a, c], ok = true;
+                for (const leg of walk) {
+                    const length = Math.hypot(leg.to[0] - leg.from[0], leg.to[1] - leg.from[1]);
+                    if (length === 0 || !(leg.vmg > 0)) { at = leg.to; continue; }
+                    const time = length / leg.vmg;
+                    if (left <= time) {
+                        const f = leg.vmg * left / length;
+                        at = [leg.from[0] + (leg.to[0] - leg.from[0]) * f, leg.from[1] + (leg.to[1] - leg.from[1]) * f];
+                        left = 0;
+                        break;
+                    }
+                    left -= time;
+                    at = leg.to;
+                }
+                if (left > 0) {
+                    // Past the line at the gun: run on over it, across, by the remaining time.
+                    if (normal > 0) at = [at[0], -Math.min(normal * left, 400 / Math.max(scale, 1e-6))];
+                    else ok = false;
+                }
+                if (ok) gun = {x: sx(at[0]), y: sy(at[1])};
             }
             return {legs: legs, gun: gun};
         }
@@ -522,20 +556,20 @@
 
             let approach = null;
             if (boat) {
-                // The start zone: the line's extensions and the 45 degree wedge off each
-                // end. They decide where the approach turns, so they sit under it.
+                // The start VMG zone: the line's extensions and the transition line off each
+                // end, on the pre-start side only. They decide where the approach turns, so
+                // they sit under it.
                 const reach = (W + VB_HEIGHT) / Math.max(scale, 1e-6);
                 const guide = function (a1, c1, a2, c2) {
                     parts.push('<line x1="' + sx(a1) + '" y1="' + sy(c1) + '" x2="' + sx(a2)
                         + '" y2="' + sy(c2) + '" stroke="' + COLOUR.guide
                         + '" stroke-width="1.2" stroke-opacity="0.6" stroke-dasharray="4 5"/>');
                 };
+                const zone = zoneAngles(nav);
                 guide(0, 0, -reach, 0);
                 guide(geo.length, 0, geo.length + reach, 0);
-                guide(0, 0, -reach, reach);
-                guide(0, 0, -reach, -reach);
-                guide(geo.length, 0, geo.length + reach, reach);
-                guide(geo.length, 0, geo.length + reach, -reach);
+                guide(0, 0, -reach * Math.cos(zone.stb), reach * Math.sin(zone.stb));
+                guide(geo.length, 0, geo.length + reach * Math.cos(zone.port), reach * Math.sin(zone.port));
 
                 approach = buildApproach(nav, geo, sx, sy, scale, W);
 
