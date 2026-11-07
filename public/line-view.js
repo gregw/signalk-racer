@@ -148,9 +148,9 @@
             let minA = Math.min.apply(null, ends.concat([boat ? boat.a - pad : 0]));
             let maxA = Math.max.apply(null, ends.concat([boat ? boat.a + pad : geo.length]));
             const minC = Math.min(0, boat ? boat.c - pad : 0);
-            // When OCS, the clearance behind the line the boat returns to is in frame too.
-            const clearance = boat && boat.c < 0 ? (nav.ocsClearance != null ? nav.ocsClearance : 30) : 0;
-            const maxC = Math.max(0, boat ? boat.c + pad : 0, clearance + pad / 2);
+            // The depth the boat approaches the zone from is in frame too.
+            const depth = boat ? approachDepth(nav, geo).depth : 0;
+            const maxC = Math.max(0, boat ? boat.c + pad : 0, boat ? depth + pad / 2 : 0);
 
             // Keep a usable run of the line itself in frame, measured on the line.
             const wanted = Math.min(LINE_IN_FRAME_LENGTHS * boatReach(nav), geo.length);
@@ -384,52 +384,113 @@
         }
 
         /**
-         * The start VMG zone's transition line angles, in radians below the line's
-         * extension, as the plugin publishes them, or the default fixed 45 degrees.
+         * The lay lines to each end of the line, when shown: for each heading the boat
+         * sails its best VMG on - close hauled and at the gybe angle, on each tack - the
+         * line through each end that a boat on that heading lays it from. Only those on
+         * the pre-start side are drawn: the rest are laid from over the line. Starboard
+         * tack is green, port red.
          */
-        function zoneAngles(nav) {
-            const ok = (v) => typeof v === 'number' && v > 0 && v <= Math.PI / 2;
-            return {
-                port: ok(nav.zonePortAngle) ? nav.zonePortAngle : Math.PI / 4,
-                stb: ok(nav.zoneStbAngle) ? nav.zoneStbAngle : Math.PI / 4,
+        function drawLaylines(nav, geo, parts, sx, sy, reach) {
+            const twd = nav.twd;
+            if (!nav.showLaylines || typeof twd !== 'number' || !isFinite(twd)) return;
+            // Some plugins sign the angles by the tack being sailed: only the size counts.
+            // Without usable published angles, 45 degrees off the wind either way.
+            const angle = function (v, lo, hi, dflt) {
+                const a = typeof v === 'number' && isFinite(v) ? Math.abs(v) : NaN;
+                return a > lo && a < hi ? a : dflt;
             };
+            const beat = angle(nav.beatAngle, 0, Math.PI / 2, Math.PI / 4);
+            const gybe = angle(nav.gybeAngle, Math.PI / 2, Math.PI, 3 * Math.PI / 4);
+            const lineBearing = geo.bearing * Math.PI / 180;
+            const headings = [
+                {h: twd - beat, colour: COLOUR.stb}, {h: twd + beat, colour: COLOUR.port},
+                {h: twd - gybe, colour: COLOUR.stb}, {h: twd + gybe, colour: COLOUR.port},
+            ];
+            headings.forEach(function (heading) {
+                // The heading along the line (towards the port end) and across it
+                // (towards the pre-start side).
+                const t = heading.h - lineBearing;
+                const da = Math.cos(t), dc = -Math.sin(t);
+                // Back from the end, the way a boat on this heading comes from.
+                if (-dc <= 1e-6) return;
+                [0, geo.length].forEach(function (endA) {
+                    parts.push('<line x1="' + sx(endA) + '" y1="' + sy(0) + '" x2="' + sx(endA - da * reach)
+                        + '" y2="' + sy(-dc * reach) + '" stroke="' + heading.colour
+                        + '" stroke-width="1.5" stroke-opacity="0.55" stroke-dasharray="10 6"/>');
+                });
+            });
+        }
+
+        /**
+         * How far behind the line a boat outside the start VMG zone, or OCS, approaches
+         * from, as the plugin publishes it, or two boat lengths.
+         */
+        function clearanceOf(nav) {
+            return typeof nav.clearance === 'number' && nav.clearance >= 0 ? nav.clearance
+                : 2 * (nav.boatLength > 0 ? nav.boatLength : 10);
+        }
+
+        /**
+         * The start VMG zone's edges, in radians below the line's extension off each end,
+         * as the plugin publishes them, or 60 degrees.
+         */
+        function zoneAngleOf(nav) {
+            return typeof nav.zoneAngle === 'number' && nav.zoneAngle > 0 && nav.zoneAngle <= Math.PI / 2
+                ? nav.zoneAngle : Math.PI / 3;
+        }
+
+        /**
+         * How far beyond the end the zone's edge stands at a depth behind the line.
+         */
+        function edgeAt(nav, depth) {
+            const theta = zoneAngleOf(nav);
+            return theta >= Math.PI / 2 - 1e-6 ? 0 : depth / Math.tan(theta);
+        }
+
+        /**
+         * The depth behind the line the boat sails its along leg and its final leg from,
+         * as startZoneDistances has it: its own depth, or the clearance if shallower than
+         * that (OCS included), but no deeper than the zone's edge at its distance beyond
+         * the end - which within the line's span is the line itself.
+         */
+        function approachDepth(nav, geo) {
+            const L = geo.length, a = geo.boat.a, c = geo.boat.c;
+            let overshoot = 0, beyondPort = false;
+            if (a > L) { overshoot = a - L; beyondPort = true; }
+            else if (a < 0) { overshoot = -a; }
+            const clearance = clearanceOf(nav);
+            const edgeDepth = overshoot * Math.tan(Math.min(zoneAngleOf(nav), Math.PI / 2 - 1e-6));
+            const depth = Math.max(c, Math.min(clearance, edgeDepth));
+            return {depth: depth, overshoot: overshoot, beyondPort: beyondPort};
         }
 
         /**
          * The approach the time to line is computed over, as dimension lines - a distance
          * to be made good, not a course to steer - plus where the boat reaches along them
-         * at the gun: along the line into the start VMG zone, then across to the line.
-         * When OCS, first back away from the course side to the clearance behind the line.
+         * at the gun: back to the clearance when outside the start VMG zone and shallower
+         * than that, or OCS; along the line into the zone; then up to the line.
          */
         function buildApproach(nav, geo, sx, sy, scale, W) {
             const boat = geo.boat;
             const L = geo.length, a = boat.a, c = boat.c;
-            const ocs = c < 0, across = Math.abs(c);
-            const clearance = ocs ? (nav.ocsClearance != null ? nav.ocsClearance : 30) : 0;
-            // The depth behind the line the along leg and the final leg are sailed from.
-            const depth = ocs ? clearance : c;
-
-            // How far past an end the boat lies, and which way it must run to get back.
-            let overshoot = 0, beyondPort = false;
-            if (a > L) { overshoot = a - L; beyondPort = true; }
-            else if (a < 0) { overshoot = -a; }
-            // The transition line stands this far beyond the end at that depth.
-            const angles = zoneAngles(nav);
-            const theta = beyondPort ? angles.port : angles.stb;
-            const zoneAt = theta >= Math.PI / 2 - 1e-6 ? 0 : depth / Math.tan(theta);
+            const ocs = c < 0;
+            const ad = approachDepth(nav, geo);
+            const depth = ad.depth, overshoot = ad.overshoot, beyondPort = ad.beyondPort;
+            const retreat = ocs ? -c + depth : depth - c;
+            const zoneAt = edgeAt(nav, depth);
             const toZone = Math.max(0, overshoot - zoneAt);
             const cornerA = toZone > 0 ? (beyondPort ? L + zoneAt : -zoneAt) : a;
 
             const parallelName = beyondPort ? 'toStbEnd' : 'toPortEnd';
             const parallel = effectiveVmg(nav, nav.effVmgAlongLine, parallelName, geo.bearing);
             const normal = effectiveVmg(nav, nav.effVmgToLine, 'toCourseSide', geo.bearing);
-            const away = ocs ? effectiveVmg(nav, nav.effVmgAwayFromLine, 'fromCourseSide', geo.bearing) : 0;
+            const away = retreat > 0 ? effectiveVmg(nav, nav.effVmgAwayFromLine, 'fromCourseSide', geo.bearing) : 0;
 
             // The legs in the order they are sailed, each with the VMG it is divided by.
             const legs = [], walk = [];
-            if (ocs) {
-                legs.push(buildLeg(sx(a), sy(c), sx(a), sy(depth), false, Math.round(across + clearance) + 'm',
-                    'Back behind the line, to the clearance', W, undefined));
+            if (retreat > 0) {
+                legs.push(buildLeg(sx(a), sy(c), sx(a), sy(depth), false, Math.round(retreat) + 'm',
+                    ocs ? 'Back behind the line' : 'Back from the line', W, undefined));
                 walk.push({from: [a, c], to: [a, depth], vmg: away});
             }
             const zoneLabel = Math.round(toZone) + 'm';
@@ -556,7 +617,7 @@
 
             let approach = null;
             if (boat) {
-                // The start VMG zone: the line's extensions and the transition line off each
+                // The start VMG zone: the line's extensions and the zone's edge off each
                 // end, on the pre-start side only. They decide where the approach turns, so
                 // they sit under it.
                 const reach = (W + VB_HEIGHT) / Math.max(scale, 1e-6);
@@ -565,11 +626,12 @@
                         + '" y2="' + sy(c2) + '" stroke="' + COLOUR.guide
                         + '" stroke-width="1.2" stroke-opacity="0.6" stroke-dasharray="4 5"/>');
                 };
-                const zone = zoneAngles(nav);
+                drawLaylines(nav, geo, parts, sx, sy, reach);
                 guide(0, 0, -reach, 0);
                 guide(geo.length, 0, geo.length + reach, 0);
-                guide(0, 0, -reach * Math.cos(zone.stb), reach * Math.sin(zone.stb));
-                guide(geo.length, 0, geo.length + reach * Math.cos(zone.port), reach * Math.sin(zone.port));
+                const theta = zoneAngleOf(nav);
+                guide(0, 0, -reach * Math.cos(theta), reach * Math.sin(theta));
+                guide(geo.length, 0, geo.length + reach * Math.cos(theta), reach * Math.sin(theta));
 
                 approach = buildApproach(nav, geo, sx, sy, scale, W);
 

@@ -2,73 +2,85 @@
 /* global describe, test, expect */
 'use strict';
 
-const {startVmgZoneAngles, polarTackGybeAngles, toRadians} = require('../racer');
+const {startZoneDistances, computeTimeToLine, resetVmgSamples, _vmgState} = require('../racer');
 
-// A line running west (starboard end east, pin west), so the course side is north and the
-// wind is given as the direction it blows from, in degrees true.
-const LINE = 270;
-const A = {beat: toRadians(40), gybe: toRadians(140)};   // tacks and gybes through 80
-const B = {beat: toRadians(55), gybe: toRadians(150)};   // tacks through 110, gybes through 60
-const zone = (twd, boat, cap = 35) => startVmgZoneAngles(LINE, toRadians(twd), boat.beat, boat.gybe, cap);
+// A boat `overshoot` metres beyond the closest end of the line (negative within its span)
+// and `across` metres off it (negative is OCS), as the (toEnd, angle) startZoneDistances
+// takes.
+function boat(overshoot, across) {
+    const toEnd = Math.hypot(overshoot, across);
+    const angle = (across < 0 ? -1 : 1) * (180 - Math.atan2(Math.abs(across), overshoot) * 180 / Math.PI);
+    return {toEnd, angle};
+}
 
-describe('start VMG zone angles', () => {
-    test('square beat: the lay lines, capped', () => {
-        expect(zone(0, A)).toEqual({port: 50, stb: 50});
-        expect(zone(0, B)).toEqual({port: 35, stb: 35});
-        // The cap is configurable: at 45, B's 35 degree lay lines are held at 45.
-        expect(zone(0, B, 45)).toEqual({port: 45, stb: 45});
+function collect(name, value) {
+    for (let i = 0; i < 3; i++) _vmgState[name].sorted.push({value, cog: 0, sog: value});
+}
+
+const CLEARANCE = 30;
+
+// The time to line at a position, with a different VMG for each leg so that a jump in
+// any one of them shows.
+function ttlAt(overshoot, across, theta = 60) {
+    const {toEnd, angle} = boat(overshoot, across);
+    const d = startZoneDistances(toEnd, angle, CLEARANCE, theta);
+    const ttl = computeTimeToLine(null, null, 270, d.toZoneVz, d.perpToLineVx, d.ocs, 'stb', 0, d.depth);
+    return {d, ttl};
+}
+
+describe('start VMG zone continuity', () => {
+    const STEP = 0.5;
+    // The steepest the legs can change in a step: near an end the back leg and the up leg
+    // both grow by tan(theta) a metre along the line, which at 1/2 + 1/4 s/m is
+    // 0.75 tan(theta) s/m. A real jump is clearance sized: tens of metres and seconds.
+    const slope = (theta) => Math.tan(theta * Math.PI / 180);
+    const maxDist = (theta) => (1 + 2 * slope(theta)) * STEP + 0.1;
+    const maxTime = (theta) => (1 + slope(theta)) * STEP + 0.1;
+
+    beforeAll(() => {
+        resetVmgSamples();
+        collect('vmgFromCourseSide', 2);
+        collect('vmgToCourseSide', 4);
+        collect('vmgToPortEnd', 5);
     });
 
-    test('a biased beat: the knocked tack runs flat, to the cap', () => {
-        // Veered 30 degrees: port tack, laying the pin, is knocked.
-        const a = zone(30, A);
-        expect(a.port).toBeCloseTo(35, 6);
-        expect(a.stb).toBeCloseTo(80, 6);
-        const b = zone(30, B);
-        expect(b.port).toBeCloseTo(35, 6);
-        expect(b.stb).toBeCloseTo(65, 6);
+    test.each([45, 60, 75])('no jumps anywhere behind the line, at %i degrees', (theta) => {
+        const jumps = [];
+        for (let c = STEP; c <= 150; c += STEP) {
+            for (let o = -60; o <= 200; o += STEP) {
+                const here = ttlAt(o, c, theta);
+                for (const [next, what] of [[ttlAt(o + STEP, c, theta), 'along'], [ttlAt(o, c + STEP, theta), 'down']]) {
+                    const dDist = Math.abs(next.d.toLine - here.d.toLine);
+                    const dTime = Math.abs(next.ttl - here.ttl);
+                    if (dDist > maxDist(theta) || dTime > maxTime(theta))
+                        jumps.push(`${what} at (${o}, ${c}): ${dDist.toFixed(1)}m ${dTime.toFixed(1)}s`);
+                }
+            }
+        }
+        expect(jumps).toEqual([]);
     });
 
-    test('square run: the gybe angles', () => {
-        expect(zone(180, A)).toEqual({port: 50, stb: 50});
-        const b = zone(180, B);
-        expect(b.port).toBeCloseTo(60, 6);
-        expect(b.stb).toBeCloseTo(60, 6);
+    test.each([45, 60, 75])('no jumps anywhere on the course side, at %i degrees', (theta) => {
+        const jumps = [];
+        for (let c = -150; c < -STEP; c += STEP) {
+            for (let o = -60; o <= 200; o += STEP) {
+                const here = ttlAt(o, c, theta);
+                for (const next of [ttlAt(o + STEP, c, theta), ttlAt(o, c + STEP, theta)]) {
+                    if (Math.abs(next.ttl - here.ttl) > maxTime(theta))
+                        jumps.push(`(${o}, ${c}): ${here.ttl.toFixed(1)}s -> ${next.ttl.toFixed(1)}s`);
+                }
+            }
+        }
+        expect(jumps).toEqual([]);
     });
 
-    test('reach: close hauled to the pin, at the gybe angle to the committee boat', () => {
-        // Wind from the east, along the line from the committee boat.
-        const a = zone(90, A);
-        expect(a.port).toBeCloseTo(40, 6);
-        expect(a.stb).toBeCloseTo(40, 6);
-        const b = zone(90, B);
-        expect(b.port).toBeCloseTo(55, 6);
-        expect(b.stb).toBeCloseTo(35, 6);
-    });
-
-    test('broad reach: straight up where it can be sailed', () => {
-        const b = zone(145, B);
-        expect(b.port).toBe(90);
-        expect(b.stb).toBeCloseTo(35, 6);
-    });
-
-    test('no angles without the inputs', () => {
-        expect(startVmgZoneAngles(LINE, null, A.beat, A.gybe)).toBeNull();
-        expect(startVmgZoneAngles(LINE, 0, null, A.gybe)).toBeNull();
-        expect(startVmgZoneAngles(LINE, 0, A.gybe, A.beat)).toBeNull();
-    });
-});
-
-describe('tack and gybe angles from a polar', () => {
-    test('the angles of the best VMG upwind and downwind', () => {
-        // Speed sin(twa): the best VMG upwind is at 45 degrees, downwind at 135.
-        const angles = polarTackGybeAngles((tws, twa) => Math.sin(twa), 5);
-        expect(angles.beat).toBeCloseTo(toRadians(45), 6);
-        expect(angles.gybe).toBeCloseTo(toRadians(135), 6);
-    });
-
-    test('none from an empty polar', () => {
-        expect(polarTackGybeAngles(() => null, 5)).toBeNull();
+    test.each([45, 60, 75])('no jump crossing the line, or its extension, anywhere, at %i degrees', (theta) => {
+        for (let o = -60; o <= 200; o += 0.5) {
+            const ocs = ttlAt(o, -0.01, theta), behind = ttlAt(o, 0.01, theta);
+            expect(Math.abs(ocs.ttl - behind.ttl)).toBeLessThan(0.1);
+            // toLine is rounded to 0.1m.
+            expect(Math.abs(ocs.d.toLine - behind.d.toLine)).toBeLessThan(0.15);
+        }
     });
 });
 
@@ -117,49 +129,43 @@ describe('start VMG zone published by the plugin', () => {
 
     const deg = (rad) => rad * 180 / Math.PI;
     const PRESTART = {latitude: -33.851, longitude: 151.251};
+    const OCS_IN_SPAN = {latitude: -33.8495, longitude: 151.251};
 
-    test('the transition line angles from the published tack and gybe angles', async () => {
-        const {plugin, published, moveTo} = startPlugin({
-            'environment.wind.directionTrue': {value: 0},
-            'performance.beatAngle': {value: B.beat},
-            'performance.gybeAngle': {value: B.gybe},
-            'design.length': {value: {overall: 12}},
-        });
+    test('the clearance is two boat lengths by default', async () => {
+        const {plugin, published, moveTo} = startPlugin({'design.length': {value: {overall: 12}}});
         await moveTo(PRESTART);
-        expect(deg(published['navigation.racing.startVmgZone.portAngle'])).toBeCloseTo(35, 1);
-        expect(deg(published['navigation.racing.startVmgZone.stbAngle'])).toBeCloseTo(35, 1);
-        expect(published['navigation.racing.startVmgZone.ocsClearance']).toBeCloseTo(36, 6);
+        expect(published['navigation.racing.startVmgZone.clearance']).toBeCloseTo(24, 6);
         plugin.stop();
     });
 
-    test('the default fixed 45 degrees when the angles are turned off, or not available', async () => {
-        const off = startPlugin({
-            'environment.wind.directionTrue': {value: 0},
-            'performance.beatAngle': {value: B.beat},
-            'performance.gybeAngle': {value: B.gybe},
-        }, {useTackGybeAngles: false, ocsClearance: 2});
-        await off.moveTo(PRESTART);
-        expect(deg(off.published['navigation.racing.startVmgZone.portAngle'])).toBeCloseTo(45, 1);
-        // No boat length: 10m a length.
-        expect(off.published['navigation.racing.startVmgZone.ocsClearance']).toBeCloseTo(20, 6);
-        off.plugin.stop();
-
-        const none = startPlugin({'environment.wind.directionTrue': {value: 0}});
-        await none.moveTo(PRESTART);
-        expect(deg(none.published['navigation.racing.startVmgZone.stbAngle'])).toBeCloseTo(45, 1);
-        none.plugin.stop();
+    test('the zone angle is published, 60 degrees by default, and configurable', async () => {
+        const def = startPlugin({});
+        await def.moveTo(PRESTART);
+        expect(def.published['navigation.racing.startVmgZone.angle']).toBeCloseTo(Math.PI / 3, 3);
+        def.plugin.stop();
+        const set = startPlugin({}, {startVmgZoneAngle: 45});
+        await set.moveTo(PRESTART);
+        expect(set.published['navigation.racing.startVmgZone.angle']).toBeCloseTo(Math.PI / 4, 3);
+        set.plugin.stop();
     });
 
-    test('an OCS boat is charged the three legs back to the line', async () => {
-        const {plugin, published, moveTo} = startPlugin({'environment.wind.directionTrue': {value: 0}});
+    test('the clearance is configurable, at 10m a length when the length is not known', async () => {
+        const {plugin, published, moveTo} = startPlugin({}, {clearance: 3});
+        await moveTo(PRESTART);
+        expect(published['navigation.racing.startVmgZone.clearance']).toBeCloseTo(30, 6);
+        plugin.stop();
+    });
+
+    test('an OCS boat within the line is charged just getting back behind it', async () => {
+        const {plugin, published, moveTo} = startPlugin({});
         // About 55m north of the line, the course side, within its span.
-        await moveTo({latitude: -33.8495, longitude: 151.251});
+        await moveTo(OCS_IN_SPAN);
         expect(published['navigation.racing.distanceStartline']).toBeLessThan(0);
         expect(published['navigation.racing.effectiveVmg.awayFromLine']).toBeGreaterThan(0);
-        // At the floor VMG (0.5 kn) both ways: (55 + 30) away and 30 back.
+        // At the floor VMG (0.5 kn): back over the line, and nothing more.
         const floor = 0.5 * 0.514444;
         const over = -published['navigation.racing.distanceStartline'];
-        expect(published['navigation.racing.timeToLine']).toBeCloseTo((over + 30) / floor + 30 / floor, 0);
+        expect(published['navigation.racing.timeToLine']).toBeCloseTo(over / floor, 0);
         plugin.stop();
     });
 });

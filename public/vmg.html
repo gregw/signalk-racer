@@ -216,9 +216,9 @@
                 ${row('Distance to line', data.distanceToLine == null ? '--' : data.distanceToLine.toFixed(0) + ' m')}
                 ${row('Effective to line', kn(data.effectiveVmg?.toLine))}
                 ${row('Effective along line', kn(data.effectiveVmg?.alongLine))}
-                ${data.legs?.awayFromLine ? row('Effective away from line (OCS)', kn(data.effectiveVmg?.awayFromLine)) : ''}
-                ${row('Zone pin / boat', data.startVmgZone ? `${data.startVmgZone.portAngle.toFixed(0)}° / ${data.startVmgZone.stbAngle.toFixed(0)}° (${data.startVmgZone.source})` : '--')}
-                ${row('OCS clearance', data.startVmgZone ? data.startVmgZone.ocsClearance.toFixed(0) + ' m' : '--')}
+                ${data.legs?.awayFromLine ? row('Effective away from line', kn(data.effectiveVmg?.awayFromLine)) : ''}
+                ${row('Zone angle', data.startVmgZone ? data.startVmgZone.angle.toFixed(0) + '°' : '--')}
+                ${row('Clearance', data.startVmgZone ? data.startVmgZone.clearance.toFixed(0) + ' m' : '--')}
                 ${row('Percentile / floor', `${pct(data.config.percentile)} / ${kn(data.config.minEffectiveVmg)}`)}
             </table>
             ${legs ? '' : '<div class="dim" style="font-size:0.8em;margin-top:0.3em">Line not in play: values are from the last position near it.</div>'}

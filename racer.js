@@ -502,108 +502,39 @@ function getVmgDetail(cog, sog, lineBearing) {
 }
 
 /**
- * The best VMG headings towards the course side, in degrees from "up" (perpendicular to
- * the line, towards the course side), positive towards the starboard end: close hauled
- * on each tack, at the gybe angle on each gybe, and straight up when its TWA lies between
- * the beat and gybe angles. Headings 90 degrees or more from up make no progress towards
- * the line, and are dropped.
- *
- * @param {number} w The true wind direction (from), in degrees relative to up.
- * @param {number} beat The beat angle (TWA), in degrees.
- * @param {number} gybe The gybe angle (TWA), in degrees.
- */
-function bestVmgHeadings(w, beat, gybe) {
-    const norm = (x) => ((x % 360) + 540) % 360 - 180;
-    const twaUp = Math.abs(norm(w));
-    const headings = [w - beat, w + beat, w + 180 - (180 - gybe), w + 180 + (180 - gybe)]
-        .map(norm)
-        .filter(h => Math.abs(h) < 90);
-    if (twaUp >= beat && twaUp <= gybe) headings.push(0);
-    return headings;
-}
-
-/**
- * The start VMG zone's transition line angles: for each end, the angle in degrees below
- * the line's extension beyond that end, from 90 (straight down from the end) to the cap.
- *
- * A boat beyond an end sails its best VMG along the line towards the zone, then turns onto
- * the heading that lays the end; the transition line is that heading's line through the
- * end. Of the best VMG headings that turn in towards the end, the one closest to sailing
- * along the line is used, as it is the one the boat is nearest to already sailing. With no
- * such heading the angle is 90. No line is ever flatter than the cap.
- *
- * @param {number} lineBearing Bearing of the line, starboard end to port end, in degrees.
- * @param {number} twd True wind direction, in radians.
- * @param {number} beat Beat angle (TWA for the best VMG upwind), in radians.
- * @param {number} gybe Gybe angle (TWA for the best VMG downwind), in radians.
- * @param {number} cap The flattest a transition line can be, in degrees.
- * @returns {{port: number, stb: number}|null} Degrees, or null without usable inputs.
- */
-function startVmgZoneAngles(lineBearing, twd, beat, gybe, cap = 35) {
-    if (![lineBearing, twd, beat, gybe].every(Number.isFinite)) return null;
-    if (!(beat > 0 && gybe > beat && gybe < Math.PI)) return null;
-    // Up: towards the course side, 90 degrees clockwise of the line's bearing.
-    const up = lineBearing + 90;
-    const w = toDegrees(twd) - up;
-    const headings = bestVmgHeadings(w, toDegrees(beat), toDegrees(gybe));
-    const towardsStb = headings.filter(h => h > 0);
-    const towardsPort = headings.filter(h => h < 0);
-    // Beyond the pin a boat turns in towards the starboard end (h > 0), and vice versa.
-    const port = towardsStb.length ? 90 - Math.max(...towardsStb) : 90;
-    const stb = towardsPort.length ? 90 + Math.min(...towardsPort) : 90;
-    const capped = (theta) => Math.min(90, Math.max(cap, theta));
-    return {port: capped(port), stb: capped(stb)};
-}
-
-/**
- * The beat and gybe angles from a polar: the true wind angles of the best VMG upwind and
- * downwind, for the given true wind speed.
- *
- * @param {function(number, number): number|null} speedAt Boat speed (m/s) for TWS (m/s)
- *   and TWA (radians).
- * @param {number} tws True wind speed, m/s.
- * @returns {{beat: number, gybe: number}|null} Radians, or null when the polar gives none.
- */
-function polarTackGybeAngles(speedAt, tws) {
-    let beat = null, up = 0, gybe = null, down = 0;
-    for (let deg = 20; deg <= 180; deg++) {
-        const twa = toRadians(deg);
-        const speed = speedAt(tws, twa);
-        if (!Number.isFinite(speed) || speed <= 0) continue;
-        const vmg = speed * Math.cos(twa);
-        if (deg <= 90 && vmg > up) { up = vmg; beat = twa; }
-        if (deg >= 90 && -vmg > down) { down = -vmg; gybe = twa; }
-    }
-    return beat !== null && gybe !== null ? {beat, gybe} : null;
-}
-
-/**
  * Resolve a boat's position relative to the start line into the distances the time to
  * line is built from.
  *
- * The start VMG zone lies below the line, between a transition line off each end at
- * `theta` degrees below the line's extension. Inside it the boat sails its best VMG to the
- * line, so the only distance that counts is the perpendicular one. Outside it the boat
- * first sails along the line out to the transition line: an L whose corner sits on it.
+ * The start VMG zone lies below the line, between a line off each end at `theta` degrees
+ * below the line's extension. Inside it the boat sails its best VMG to the line, so the only
+ * distance that counts is the perpendicular one.
+ *
+ * Outside it the boat first gets to the depth it approaches the zone at, `depth`: the
+ * clearance behind the line, or its own depth if it is already deeper. It sails along
+ * the line at that depth into the zone, then up to the line. Near an end the depth is no
+ * more than the zone's own depth at the boat's distance beyond the end, so the retreat
+ * shrinks to nothing at the zone's edge and the distances never jump there.
  *
  * There is no zone on the course side. A boat on the course side of the line, or of its
- * extension, must first get back behind it, out to `clearance` metres on the pre-start
- * side; from there it is charged as any other boat: along the line into the zone if it is
- * beyond the end, then back up to the line.
+ * extension, gets back behind it the same way: to the clearance, or only as far as the
+ * zone's edge near an end, which within the line's span is the line itself. So nothing
+ * jumps as a boat crosses the line either.
  *
- * The L is a distance to be made good, not the track a boat sails.
+ * The legs are distances to be made good, not the track a boat sails.
  *
  * @param {number} toEnd Distance from the boat to the closest end of the line, in metres.
  * @param {number} angle Signed angle at that end, in degrees, between the line (towards
  *   the other end) and the boat. Negative when the boat is on the course side (OCS).
- * @param {number} [theta=45] The transition line's angle at that end, in degrees.
- * @param {number} [clearance=0] How far behind the line an OCS boat returns to, in metres.
- * @returns {{ocs: boolean, inStartZone: boolean, perpToLineVx: number, toZoneVz: number,
- *   clearance: number, toLine: number, distanceToLine: number}} For an OCS boat,
- *   `perpToLineVx` is its distance on the course side and `toZoneVz` the along leg from
- *   the clearance.
+ * @param {number} [clearance=0] How far behind the line a boat outside the zone, or OCS,
+ *   approaches from, in metres.
+ * @param {number} [theta=60] The zone's edges, in degrees below the line's extension.
+ * @returns {{ocs: boolean, inStartZone: boolean, perpToLineVx: number, retreat: number,
+ *   toZoneVz: number, depth: number, clearance: number, toLine: number,
+ *   distanceToLine: number}} `perpToLineVx` is the boat's distance from the line (or its
+ *   extension), on whichever side; `retreat` the leg away from the line, out to `depth`;
+ *   `toZoneVz` the leg along the line at `depth`; `depth` also the final leg up to the line.
  */
-function startZoneDistances(toEnd, angle, theta = 45, clearance = 0) {
+function startZoneDistances(toEnd, angle, clearance = 0, theta = 60) {
     const anglePBV = Math.abs(angle);
     const ocs = angle < 0;
     const angleVBx = 180 - anglePBV;
@@ -612,34 +543,30 @@ function startZoneDistances(toEnd, angle, theta = 45, clearance = 0) {
     const perpToLineVx = toEnd * Math.sin(toRadians(angleVBx));
     // Distance beyond the end along the line's extension: negative inside the line's span.
     const overshoot = toEnd * Math.cos(toRadians(angleVBx));
-    // How far beyond the end the transition line stands at a given depth behind the line.
-    const zoneAt = (depth) => theta >= 90 ? 0 : depth / Math.tan(toRadians(theta));
+    // How deep the zone's edge is at the boat's distance beyond the end, and how far
+    // beyond the end it stands at a given depth.
+    const slope = Math.tan(toRadians(Math.min(90, Math.max(1, theta))));
+    const edgeDepth = Math.max(0, overshoot) * slope;
+    const edgeAt = (depth) => theta >= 90 ? 0 : depth / slope;
 
-    if (ocs) {
-        const toZoneVz = Math.max(0, overshoot - zoneAt(clearance));
-        const toLine = Math.round(10 * perpToLineVx) / 10;
-        return {
-            ocs,
-            inStartZone: false,
-            perpToLineVx,
-            toZoneVz,
-            clearance,
-            toLine,
-            distanceToLine: -toLine,
-        };
-    }
-
-    const toZoneVz = Math.max(0, overshoot - zoneAt(perpToLineVx));
-    // The length of the L, which is what the visualisation draws.
-    const toLine = Math.round(10 * (toZoneVz + perpToLineVx)) / 10;
+    // Signed: negative on the course side.
+    const across = ocs ? -perpToLineVx : perpToLineVx;
+    const depth = Math.max(across, Math.min(clearance, edgeDepth));
+    const retreat = depth - across;
+    const toZoneVz = Math.max(0, overshoot - edgeAt(depth));
+    // The total of the legs, which is what the visualisation draws.
+    const legs = Math.round(10 * (retreat + toZoneVz + depth)) / 10;
     return {
         ocs,
-        inStartZone: toZoneVz === 0,
+        inStartZone: !ocs && retreat === 0 && toZoneVz === 0,
         perpToLineVx,
+        retreat,
         toZoneVz,
-        clearance: 0,
-        toLine,
-        distanceToLine: toLine,
+        depth,
+        clearance,
+        toLine: legs,
+        // Signed: when OCS, how far over the line the boat is.
+        distanceToLine: ocs ? -Math.round(10 * perpToLineVx) / 10 : legs,
     };
 }
 
@@ -652,12 +579,13 @@ function startZoneDistances(toEnd, angle, theta = 45, clearance = 0) {
  * it is larger. Published as `navigation.racing.effectiveVmg.*` so a client can show the
  * same legs the time to line was built from without re-deriving this.
  *
+ * @param {boolean} [retreat=ocs] Whether there is a leg back away from the line.
  * @returns {{toLine: number, alongLine: number, awayFromLine: number}} All in m/s.
  *   `toLine` is towards the course side; `alongLine` is 0 when there is no along leg to
- *   sail; `awayFromLine` is 0 unless the boat is OCS, when it is the VMG back away from
- *   the course side.
+ *   sail; `awayFromLine` is 0 unless there is a leg back away from the line, out to the
+ *   clearance.
  */
-function effectiveVmg(cog, sog, lineBearing, toZoneVz, ocs, closestEnd) {
+function effectiveVmg(cog, sog, lineBearing, toZoneVz, ocs, closestEnd, retreat = ocs) {
     let vmgNormalSigned = 0;
     let vmgTangentSigned = 0;
 
@@ -671,13 +599,13 @@ function effectiveVmg(cog, sog, lineBearing, toZoneVz, ocs, closestEnd) {
         }
     }
 
-    // Across the line, towards the course side. When OCS this is the last leg, back up to
-    // the line from the clearance, so what the boat is doing right now does not count.
+    // Across the line, towards the course side. After a retreat this is the last leg, back
+    // up to the line from the clearance, so what the boat is doing right now does not count.
     const histNormal = bestVmg(vmgState.vmgToCourseSide);
-    const toLine = Math.max(histNormal || 0, ocs ? 0 : (vmgNormalSigned || 0), cfg.minEffectiveVmg);
+    const toLine = Math.max(histNormal || 0, retreat ? 0 : (vmgNormalSigned || 0), cfg.minEffectiveVmg);
 
-    // When OCS, the first leg: back away from the course side, out to the clearance.
-    const awayFromLine = ocs
+    // The first leg, when there is one: back away from the line, out to the clearance.
+    const awayFromLine = retreat
         ? Math.max(bestVmg(vmgState.vmgFromCourseSide) || 0, -vmgNormalSigned || 0, cfg.minEffectiveVmg)
         : 0;
 
@@ -706,35 +634,38 @@ function effectiveVmg(cog, sog, lineBearing, toZoneVz, ocs, closestEnd) {
 
 /**
  * Time to reach the start line, over the legs that startZoneDistances resolves, each at
- * its own effective VMG: along the line out to the transition line, then across to the
- * line. When OCS, first back away from the course side out to the clearance, then along
- * the line into the zone, then back up to the line from the clearance.
+ * its own effective VMG: back away from the line out to the approach depth (when there is
+ * a retreat), along the line at that depth into the zone, then up to the line.
+ *
+ * @param {number} perpToLineVx The boat's distance from the line, on whichever side.
+ * @param {number} [depth] The depth the along leg and the final leg are sailed from:
+ *   by default the boat's own depth, or the line itself when OCS.
  */
 function computeTimeToLine(cog, sog, lineBearing, toZoneVz, perpToLineVx, ocs, closestEnd,
-                           timeToStart = 0, clearance = 0) {
+                           timeToStart = 0, depth = ocs ? 0 : perpToLineVx) {
     if (cog != null && sog != null && toRadians(lineBearing) === null) {
         return 0;
     }
 
+    const retreat = ocs ? perpToLineVx + depth : Math.max(0, depth - perpToLineVx);
     const {toLine, alongLine, awayFromLine} =
-        effectiveVmg(cog, sog, lineBearing, toZoneVz, ocs, closestEnd);
+        effectiveVmg(cog, sog, lineBearing, toZoneVz, ocs, closestEnd, retreat > 0);
 
     let ttl = 0;
-    const across = ocs ? clearance : perpToLineVx;
 
-    // When OCS: back across the line (or its extension) and out to the clearance.
-    if (ocs && awayFromLine > 0) {
-        ttl += (perpToLineVx + clearance) / awayFromLine;
+    // Back away from the line (across it, when OCS), out to the approach depth.
+    if (retreat > 0 && awayFromLine > 0) {
+        ttl += retreat / awayFromLine;
     }
 
-    // Outside the start VMG zone: along the line out to the transition line.
+    // Outside the start VMG zone: along the line into the zone.
     if (toZoneVz > 0 && alongLine > 0) {
         ttl += toZoneVz / alongLine;
     }
 
-    // Then across to the line itself.
-    if (across > 0 && toLine > 0) {
-        ttl += across / toLine;
+    // Then up to the line itself.
+    if (depth > 0 && toLine > 0) {
+        ttl += depth / toLine;
     }
 
     // If we still somehow have zero (no speed or distances), just return time to start so TTB logic doesn't explode.
@@ -755,9 +686,6 @@ module.exports = {
     getVmgDetail,
     computeTimeToLine,
     startZoneDistances,
-    startVmgZoneAngles,
-    polarTackGybeAngles,
-    bestVmgHeadings,
     effectiveVmg,
     vmgNames,
     getBestVmg,

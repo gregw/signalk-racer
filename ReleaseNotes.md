@@ -1,34 +1,20 @@
 ## 2.0.0 Polars
- + The effective VMG used for the time to line is now the best of:
-   + the best VMG: with an active polar from
-     [signalk-polar-management](https://www.npmjs.com/package/signalk-polar-management) 1.5+,
-     the polar VMG for the current wind times a performance factor tuned by recent sailing;
-     otherwise, as before, a high percentile of recent samples;
-   + the VMG being achieved right now;
-   + the minimum, `minEffectiveVmg`.
-
-   See the [VMG](https://github.com/gregw/signalk-racer/wiki/VMG) wiki page
- + Samples age out after 10 minutes, and with a polar, a sample over 120% of it is discarded
-   as motoring
- + Webapp: now a menu of three pages, START (the line, its visualisation and the timer), VMG
-   and COURSE, at twice the font size. The small VMG adjustment buttons have moved to the VMG
-   page, which shows everything behind each VMG
- + Webapp: the COURSE page, with a row for every point of the active (or any) route:
-   the bearing and distance from here, the leg heading and length, and the TWA on each leg in
-   the current wind. BTW/DTW from the Course API or over NMEA are shown for the next point
- + The start VMG zone is taken from the boat's tack and gybe angles (`performance.beatAngle` and
-  `performance.gybeAngle`, or the polar's), never flatter than `startVmgZoneCap` (35°), rather
-  than a fixed 45° off each end. Turn off `useTackGybeAngles` to keep the 45°. The angles are
-  published as `navigation.racing.startVmgZone.portAngle` and `.stbAngle`. See the
-  [Start VMG Zone](https://github.com/gregw/signalk-racer/wiki/Start-VMG-Zone) wiki page
-+ OCS: there is no longer a zone on the course side. An OCS boat's time to line is now back away
-  from the line to `ocsClearance` boat lengths (3) behind it, along into the zone, then back up
-  to the line, rather than just back to the line. The away leg's VMG is published as
-  `navigation.racing.effectiveVmg.awayFromLine`, the clearance as
-  `navigation.racing.startVmgZone.ocsClearance`
-+ Fixed the line bias and next leg TWA not being published in a northerly
- + Fixed the next leg heading and TWA not following the active route on servers that keep the
-   course only in the v2 Course API: the active route is now read from the Course API
+ + Effective VMG uses the boat's polar from
+   [signalk-polar-management](https://www.npmjs.com/package/signalk-polar-management) 1.5+,
+   when there is one. See [Start VMG](https://github.com/gregw/signalk-racer/wiki/Start-VMG)
+ + VMG samples age out after 10 minutes, and motoring samples are discarded
+ + Start VMG zone edges default to 60°, configurable with `startVmgZoneAngle`
+ + Boats outside the zone, or OCS, approach it from a `clearance` (2 boat lengths) behind the
+   line. See [Start VMG Zone](https://github.com/gregw/signalk-racer/wiki/Start-VMG-Zone)
+ + New paths: `navigation.racing.startVmgZone.angle`, `navigation.racing.startVmgZone.clearance`
+   and `navigation.racing.effectiveVmg.awayFromLine`
+ + Webapp: a menu of START, VMG and COURSE pages, with larger fonts
+ + Webapp: VMG page showing everything behind each VMG, with the VMG adjustments
+ + Webapp: COURSE page reviewing every leg of the active route
+ + Webapp: lay lines on the line view (`showLaylines`)
+ + Webapp: time to burn (TTB) on the START page
+ + Fixed the line bias and next leg TWA not being published in a northerly
+ + Fixed the next leg not following the active route on servers using only the v2 Course API
 
 ## 1.3.9 Deactivate the line
  + The line can be deactivated with `{"active": false}` to `navigation.racing.setStartLineName`,

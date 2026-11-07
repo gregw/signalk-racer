@@ -9,8 +9,8 @@ module.exports = (app) => {
         publishedBestVmg: {toCourseSide: null, fromCourseSide: null, toPortEnd: null, toStbEnd: null},
         publishedBestVmgOverrides: {toCourseSide: null, fromCourseSide: null, toPortEnd: null, toStbEnd: null},
         publishedEffectiveVmg: {toLine: null, alongLine: null, awayFromLine: null},
-        // Last published start VMG zone: the transition line angles (rad) and OCS clearance (m).
-        publishedStartVmgZone: {portAngle: null, stbAngle: null, ocsClearance: null},
+        // Last published start VMG zone angle (rad) and clearance (m).
+        publishedStartVmgZone: {angle: null, clearance: null},
         publishedPolarVmg: {toCourseSide: null, fromCourseSide: null, toPortEnd: null, toStbEnd: null},
         publishedTunedFactor: {toCourseSide: null, fromCourseSide: null, toPortEnd: null, toStbEnd: null},
         // The polar management service, when one is running, and a handle on the raw
@@ -95,20 +95,20 @@ module.exports = (app) => {
                 title: 'Maximum distance to line and/or line zone in meters to consider for VMG calculations',
                 default: 2000
             },
-            useTackGybeAngles: {
+            startVmgZoneAngle: {
+                type: 'number',
+                title: 'Angle of the start VMG zone\'s edges, in degrees below the line\'s extension off each end (90 is just the span of the line)',
+                default: 60
+            },
+            showLaylines: {
                 type: 'boolean',
-                title: 'Use the tack and gybe angles (performance.beatAngle and performance.gybeAngle, or from the polar) for the start VMG zone, rather than a fixed 45 degrees off each end',
+                title: 'Show the lay lines to each end of the line in the webapp\'s line view, from the published tack and gybe angles (performance.beatAngle and performance.gybeAngle), or 45 degrees off the wind when they are not published, and the TWD',
                 default: true
             },
-            startVmgZoneCap: {
+            clearance: {
                 type: 'number',
-                title: 'The flattest the start VMG zone transition lines can be, in degrees below the line\'s extension',
-                default: 35
-            },
-            ocsClearance: {
-                type: 'number',
-                title: 'Boat lengths behind the line an OCS boat returns to before sailing to the line again',
-                default: 3
+                title: 'Boat lengths behind the line that a boat outside the start VMG zone, or OCS, approaches the zone from',
+                default: 2
             },
             usePolars: {
                 type: 'boolean',
@@ -171,8 +171,6 @@ module.exports = (app) => {
         resetVmgSamples,
         computeTimeToLine,
         startZoneDistances,
-        startVmgZoneAngles,
-        polarTackGybeAngles,
         effectiveVmg,
         vmgNames,
         getAllBestVmg,
@@ -233,7 +231,7 @@ module.exports = (app) => {
                         "value": {
                             "type": "number",
                             "units": "m/s",
-                            "description": "VMG the leg across to the line, towards the course side, was divided by: the collected best, or the VMG being sailed right now if that is better (when OCS, the collected best for the final leg back up to the line)",
+                            "description": "VMG the leg across to the line, towards the course side, was divided by: the collected best, or the VMG being sailed right now if that is better (after a leg back to the clearance, the collected best for the final leg up to the line)",
                             "displayName": "Effective VMG to line",
                             "shortName": "VMG>Line"
                         }
@@ -243,39 +241,29 @@ module.exports = (app) => {
                         "value": {
                             "type": "number",
                             "units": "m/s",
-                            "description": "When OCS, the VMG the leg back away from the course side, out to the clearance behind the line, was divided by; zero otherwise",
+                            "description": "VMG the leg back away from the line (back behind it, when OCS) was divided by, when there is one; zero otherwise",
                             "displayName": "Effective VMG away from line",
                             "shortName": "VMG<Line"
                         }
                     },
                     {
-                        "path": "navigation.racing.startVmgZone.portAngle",
+                        "path": "navigation.racing.startVmgZone.angle",
                         "value": {
                             "type": "number",
                             "units": "rad",
-                            "description": "Start VMG zone transition line at the port end (pin): its angle below the line's extension beyond the pin, from 90 degrees (straight down from the pin) to the configured cap",
-                            "displayName": "Start VMG zone port angle",
-                            "shortName": "Zone<Pin"
+                            "description": "Angle of the start VMG zone's edges, below the line's extension off each end",
+                            "displayName": "Start VMG zone angle",
+                            "shortName": "Zone"
                         }
                     },
                     {
-                        "path": "navigation.racing.startVmgZone.stbAngle",
-                        "value": {
-                            "type": "number",
-                            "units": "rad",
-                            "description": "Start VMG zone transition line at the starboard end (committee boat): its angle below the line's extension beyond the boat, from 90 degrees (straight down from the boat) to the configured cap",
-                            "displayName": "Start VMG zone starboard angle",
-                            "shortName": "Zone<Stb"
-                        }
-                    },
-                    {
-                        "path": "navigation.racing.startVmgZone.ocsClearance",
+                        "path": "navigation.racing.startVmgZone.clearance",
                         "value": {
                             "type": "number",
                             "units": "m",
-                            "description": "How far behind the line an OCS boat is charged for returning to, before sailing to the line again",
-                            "displayName": "OCS clearance",
-                            "shortName": "OCS clr"
+                            "description": "How far behind the line a boat outside the start VMG zone, or OCS, is charged for approaching the zone from, before sailing up to the line",
+                            "displayName": "Start clearance",
+                            "shortName": "Clr"
                         }
                     },
                     {
@@ -506,7 +494,7 @@ module.exports = (app) => {
         // now wins. Only published once there is a position to resolve them against.
         if (position.lineBearing != null) {
             const effective = effectiveVmg(position.cog, position.sog, position.lineBearing,
-                position.toZoneVz, position.ocs, position.closestEnd);
+                position.toZoneVz, position.ocs, position.closestEnd, position.retreat > 0);
             for (const leg of ['toLine', 'alongLine', 'awayFromLine']) {
                 const value = state.startLine ? Math.round(effective[leg] * 1000) / 1000 : null;
                 if (state.publishedEffectiveVmg[leg] !== value) {
@@ -588,45 +576,23 @@ module.exports = (app) => {
         return typeof value === 'number' && Number.isFinite(value) ? value : null;
     }
 
-    /**
-     * The start VMG zone's transition line angles (degrees below the line's extension) at
-     * each end, from the published tack and gybe angles, or the polar's, or the default
-     * fixed 45 degrees when neither is available or they are turned off.
-     */
-    function startVmgZone(lineBearing) {
-        const fixed = {port: 45, stb: 45, source: 'default'};
-        if (state.options?.useTackGybeAngles === false)
-            return fixed;
-        const twd = selfNumber('environment.wind.directionTrue');
-        let beat = selfNumber('performance.beatAngle');
-        let gybe = selfNumber('performance.gybeAngle');
-        let source = 'performance';
-        if (beat === null || gybe === null) {
-            const polar = activePolar();
-            const tws = selfNumber('environment.wind.speedTrue');
-            const angles = polar && tws !== null ? polarTackGybeAngles(polar.speedAt, tws) : null;
-            if (!angles)
-                return fixed;
-            ({beat, gybe} = angles);
-            source = 'polar';
-        }
-        const angles = startVmgZoneAngles(lineBearing, twd, beat, gybe, state.options?.startVmgZoneCap ?? 35);
-        return angles ? {...angles, source} : fixed;
+    // How far behind the line a boat outside the start VMG zone, or OCS, approaches from:
+    // boat lengths, from the boat's length overall, or 10 m a length when it is not known.
+    function startClearance() {
+        return (state.options?.clearance ?? 2) * (lengthOverall() ?? 10);
     }
 
-    // How far behind the line an OCS boat returns to: boat lengths, from the boat's
-    // length overall, or 10 m a length when it is not known.
-    function ocsClearance() {
-        return (state.options?.ocsClearance ?? 3) * (lengthOverall() ?? 10);
+    // The angle of the start VMG zone's edges below the line's extension, in degrees.
+    function startVmgZoneAngle() {
+        const angle = state.options?.startVmgZoneAngle;
+        return typeof angle === 'number' && angle > 0 && angle <= 90 ? angle : 60;
     }
 
-    function publishStartVmgZone(zone, clearance) {
-        const round = (v) => v == null ? null : Math.round(v * 10000) / 10000;
-        const values = zone ? {
-            portAngle: round(toRadians(zone.port)),
-            stbAngle: round(toRadians(zone.stb)),
-            ocsClearance: Math.round(clearance * 10) / 10,
-        } : {portAngle: null, stbAngle: null, ocsClearance: null};
+    function publishStartVmgZone(angle, clearance) {
+        const values = {
+            angle: angle == null ? null : Math.round(toRadians(angle) * 10000) / 10000,
+            clearance: clearance == null ? null : Math.round(clearance * 10) / 10,
+        };
         const deltas = [];
         for (const [key, value] of Object.entries(values)) {
             if (state.publishedStartVmgZone[key] !== value) {
@@ -1498,36 +1464,27 @@ module.exports = (app) => {
             }
             angle = ((angle + 180) % 360 + 360) % 360 - 180;
 
-            // The start VMG zone is a 45 degree wedge off each end of the line.
+            // The start VMG zone lies between a line off each end at startVmgZoneAngle
+            // (60 degrees) below the line's extension.
             // - Inside the zone, distanceToLine = perpendicular to the line (or extension).
-            // - Outside it, distanceToLine = distance parallel to the line out to the
-            //   wedge, plus that perpendicular distance: an L whose corner sits on the 45.
-            // This is illustrated for the starboard closest end of the line below:
-            //     \                                     /
-            //      \                                   /
-            //       P---------------------------------B - - - - - -x-
-            //      /135                         PBz=135\' , VBx    .
-            //     /                                     \   ' ,    .
-            //    /                                       \      ' ,.
-            //   /                                     b   z - - - -V
-            //  /                                           \
-            //
-            // P=pin; B=boat; x=extension; b=perpToBoat; z=zoneEntry; V=vessel; N=north
-            // bearing = NBP, PBz == 135, bBz == zBx == 45, Bb == bz == Vx == perpendicular
-            // distance to the line or extension, PBV = abs(angle), VBx = 180 - PBV.
+            // - Outside it, back to the clearance depth if shallower than that (tapering to
+            //   nothing at the zone's edge), along the line at that depth into the zone,
+            //   then up to the line.
+            // - When OCS, back across the line to the full clearance, then the same.
+            // distanceToLine is the total of those legs, or minus the distance over the
+            // line when OCS.
             // The geometry itself lives in racer.js so it can be unit tested.
-            const zone = startVmgZone(startLine.bearing);
-            const clearance = ocsClearance();
-            const theta = closestEnd === 'port' ? zone.port : zone.stb;
-            const {ocs, perpToLineVx, toZoneVz, distanceToLine} =
-                startZoneDistances(toEnd, angle, theta, clearance);
+            const clearance = startClearance();
+            const zoneAngle = startVmgZoneAngle();
+            const {ocs, perpToLineVx, retreat, toZoneVz, depth, distanceToLine} =
+                startZoneDistances(toEnd, angle, clearance, zoneAngle);
             app.debug('distanceToLine:' + distanceToLine);
             if (!isLineInPlay(distanceToLine)) {
                 clearLineDeltas();
                 return;
             }
             state.distanceToLine = distanceToLine;
-            state.lastLeg = {ocs, toZoneVz, perpToLineVx, closestEnd, clearance, zone};
+            state.lastLeg = {ocs, retreat, toZoneVz, depth, perpToLineVx, closestEnd, clearance, zoneAngle};
 
             // Collect VMG samples
             const cog = app.getSelfPath("navigation.courseOverGroundTrue")?.value;
@@ -1537,7 +1494,7 @@ module.exports = (app) => {
                 collectVmgSamples(cog, sog, startLine.bearing, toZoneVz, perpToLineVx, polar);
             }
             const ttl = computeTimeToLine(cog, sog, startLine.bearing, toZoneVz, perpToLineVx, ocs, closestEnd,
-                state.timeToStart ?? 0, clearance);
+                state.timeToStart ?? 0, depth);
             // Time to burn stands when OCS too: the time to line is then the time to get
             // back over the line from the course side, so the spare time before you have
             // to turn and do it is just as real - and goes negative when you have left it
@@ -1549,8 +1506,8 @@ module.exports = (app) => {
                 {path: "navigation.racing.timeToLine", value: ttl},
                 {path: "navigation.racing.timeToBurn", value: ttb}
             ]);
-            publishBestVmg({ocs, toZoneVz, closestEnd, cog, sog, lineBearing: startLine.bearing});
-            publishStartVmgZone(zone, clearance);
+            publishBestVmg({ocs, retreat, toZoneVz, closestEnd, cog, sog, lineBearing: startLine.bearing});
+            publishStartVmgZone(zoneAngle, clearance);
 
         } else {
             clearLineDeltas();
@@ -1569,7 +1526,7 @@ module.exports = (app) => {
         ]);
         publishBestVmg();
         clearEffectiveVmg();
-        publishStartVmgZone(null);
+        publishStartVmgZone(null, null);
     }
 
     function processWind(twd) {
@@ -2115,6 +2072,14 @@ module.exports = (app) => {
                 }
             });
 
+            // Display settings for the webapp, and for any other client drawing the line.
+            router.get('/settings', (req, res) => {
+                res.json({
+                    showLaylines: state.options?.showLaylines !== false,
+                    startVmgZoneAngle: startVmgZoneAngle(),
+                });
+            });
+
             router.get('/vmg', (req, res) => {
                 const inputs = state.lastVmgInputs;
                 const inPlay = !!state.startLine && state.distanceToLine != null;
@@ -2129,19 +2094,14 @@ module.exports = (app) => {
                     inPlay,
                     distanceToLine: state.distanceToLine ?? null,
                     legs: inPlay && leg ? {
-                        awayFromLine: leg.ocs ? 'fromCourseSide' : null,
-                        awayFromLineDistance: leg.ocs ? leg.perpToLineVx + leg.clearance : 0,
+                        awayFromLine: leg.retreat > 0 ? 'fromCourseSide' : null,
+                        awayFromLineDistance: leg.retreat,
                         toLine: 'toCourseSide',
                         alongLine: leg.toZoneVz > 0 ? (leg.closestEnd === 'port' ? 'toStbEnd' : 'toPortEnd') : null,
-                        toLineDistance: leg.ocs ? leg.clearance : leg.perpToLineVx,
+                        toLineDistance: leg.depth,
                         alongLineDistance: leg.toZoneVz,
                     } : null,
-                    startVmgZone: inPlay && leg ? {
-                        portAngle: leg.zone.port,
-                        stbAngle: leg.zone.stb,
-                        source: leg.zone.source,
-                        ocsClearance: leg.clearance,
-                    } : null,
+                    startVmgZone: inPlay && leg ? {angle: leg.zoneAngle, clearance: leg.clearance} : null,
                     effectiveVmg: state.publishedEffectiveVmg,
                     inputs: inputs ?? null,
                     ...detail,

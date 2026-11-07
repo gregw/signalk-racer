@@ -39,7 +39,7 @@
         .nav b { font-size: 1.2em; }
 
         /* Time and distance to the line, either side below the drawing. */
-        .line-stats { display: flex; justify-content: center; gap: 2em; }
+        .line-stats { display: flex; justify-content: center; gap: 1.2em; }
 
         /* Seven buttons across: on a narrow screen they shrink to fit rather than overflow. */
         .adjust-grid {
@@ -87,8 +87,8 @@
 
         .cross-stat { line-height: 1; }
         .cross-stat-label { font-size: 0.65em; color: #aaa; }
-        /* Large, but never wider than a phone allows. */
-        .cross-stat-value { font-size: min(3.6em, 13vw); font-weight: bold; font-family: monospace; }
+        /* Large, but three abreast never wider than a phone allows. */
+        .cross-stat-value { font-size: min(3em, 8.5vw); font-weight: bold; font-family: monospace; }
         #timeToStart {
             font-size: min(3em, 18vw);
             font-weight: bold;
@@ -153,16 +153,22 @@
         timerRunning: false,
         startTime: null,
         timeToLine: null,
+        timeToBurn: null,
         distanceToLine: null,
         boatLength: null,
         twd: null,
+        // The lay lines: the plugin's showLaylines setting, and the tack and gybe angles
+        // (TWA, rad) another plugin publishes.
+        showLaylines: false,
+        beatAngle: null,
+        gybeAngle: null,
         effVmgToLine: null,
         effVmgAlongLine: null,
         effVmgAwayFromLine: null,
-        // The start VMG zone's transition line angles (rad) and the OCS clearance (m).
-        zonePortAngle: null,
-        zoneStbAngle: null,
-        ocsClearance: null,
+        // The start VMG zone's edges below the line's extension (rad), and how far behind the
+        // line a boat outside it, or OCS, approaches from (m).
+        zoneAngle: null,
+        clearance: null,
         lineLength: null,
         lineBearing: null,
         bestVmg: {toCourseSide: null, fromCourseSide: null, toPortEnd: null, toStbEnd: null},
@@ -205,6 +211,14 @@
         if (ttl)
             ttl.textContent = formatTimeToMMSS(nav.timeToLine);
 
+        const ttb = document.getElementById('timeToBurn');
+        if (ttb) {
+            const value = nav.timeToBurn;
+            ttb.textContent = formatTimeToMMSS(value);
+            // Negative is late for the gun.
+            ttb.style.color = value != null && value < 0 ? '#fc0' : '#fff';
+        }
+
         const dtl = document.getElementById('distanceToLine');
         if (dtl) {
             const value = nav.distanceToLine;
@@ -232,7 +246,10 @@
                     {path: "navigation.speedOverGround", period: 1000},
                     // The hull is drawn at true scale, and the wind against the line.
                     {path: "design.length", period: 10000},
-                    {path: "environment.wind.directionTrue", period: 1000}
+                    {path: "environment.wind.directionTrue", period: 1000},
+                    // For the lay lines, when shown.
+                    {path: "performance.beatAngle", period: 5000},
+                    {path: "performance.gybeAngle", period: 5000}
                 ]
             }));
         };
@@ -299,20 +316,24 @@
                                     nav.effVmgAwayFromLine = value.value;
                                     scheduleRender();
                                     break;
-                                case "navigation.racing.startVmgZone.portAngle":
-                                    nav.zonePortAngle = value.value;
+                                case "navigation.racing.startVmgZone.angle":
+                                    nav.zoneAngle = value.value;
                                     scheduleRender();
                                     break;
-                                case "navigation.racing.startVmgZone.stbAngle":
-                                    nav.zoneStbAngle = value.value;
-                                    scheduleRender();
-                                    break;
-                                case "navigation.racing.startVmgZone.ocsClearance":
-                                    nav.ocsClearance = value.value;
+                                case "navigation.racing.startVmgZone.clearance":
+                                    nav.clearance = value.value;
                                     scheduleRender();
                                     break;
                                 case "design.length.overall":
                                     nav.boatLength = value.value;
+                                    scheduleRender();
+                                    break;
+                                case "performance.beatAngle":
+                                    nav.beatAngle = value.value;
+                                    scheduleRender();
+                                    break;
+                                case "performance.gybeAngle":
+                                    nav.gybeAngle = value.value;
                                     scheduleRender();
                                     break;
                                 case "environment.wind.directionTrue":
@@ -321,6 +342,10 @@
                                     break;
                                 case "navigation.racing.timeToLine":
                                     nav.timeToLine = value.value;
+                                    scheduleRender();
+                                    break;
+                                case "navigation.racing.timeToBurn":
+                                    nav.timeToBurn = value.value;
                                     scheduleRender();
                                     break;
                                 case "navigation.racing.distanceStartline":
@@ -421,6 +446,27 @@
 
     // The racing paths are subscribed with policy "instant", so they only arrive when
     // they change - which for the line ends may be never. Seed the current state once.
+    // The plugin's display settings, and the tack and gybe angles the lay lines need,
+    // which may only be published now and then.
+    function loadSettings() {
+        fetch(window.location.origin + '/plugins/signalk-racer/settings', {credentials: 'same-origin'})
+            .then(res => res.ok ? res.json() : {})
+            .then(settings => {
+                // The plugin's default (on) when the settings can't be read, e.g. not logged in.
+                nav.showLaylines = settings.showLaylines !== false;
+                if (!nav.showLaylines) return;
+                return fetch(window.location.origin + '/signalk/v1/api/vessels/self/performance')
+                    .then(res => res.ok ? res.json() : {})
+                    .then(perf => {
+                        const leaf = (node) => (node && node.value !== undefined) ? node.value : null;
+                        if (nav.beatAngle == null) nav.beatAngle = leaf(perf.beatAngle);
+                        if (nav.gybeAngle == null) nav.gybeAngle = leaf(perf.gybeAngle);
+                    });
+            })
+            .catch(err => console.error('Failed to load settings:', err))
+            .then(() => scheduleRender());
+    }
+
     function loadInitialState() {
         fetch(window.location.origin + '/signalk/v1/api/vessels/self/navigation')
             .then(res => {
@@ -443,6 +489,7 @@
                 nav.timerRunning = !!leaf(racing.startTime);
                 nav.startTime = leaf(racing.startTime);
                 nav.timeToLine = leaf(racing.timeToLine);
+                nav.timeToBurn = leaf(racing.timeToBurn);
                 nav.distanceToLine = leaf(racing.distanceStartline);
 
                 const bestVmg = racing.bestVmg || {};
@@ -608,6 +655,7 @@
         new ResizeObserver(() => scheduleRender()).observe(document.getElementById('lineSvg')));
     loadStartLines();
     loadInitialState();
+    loadSettings();
 
     function formatTimeToMMSS(seconds) {
         if (seconds == null || isNaN(seconds)) return '--:--';
@@ -719,6 +767,10 @@
         <div class="cross-stat" title="Time to line at the effective VMG">
             <div class="cross-stat-value" id="timeToLine">--:--</div>
             <div class="cross-stat-label">TTL</div>
+        </div>
+        <div class="cross-stat" title="Time to burn: the time to start less the time to line, negative when late">
+            <div class="cross-stat-value" id="timeToBurn">--:--</div>
+            <div class="cross-stat-label">TTB</div>
         </div>
         <div class="cross-stat" title="Distance from the bow to the line, negative when OCS">
             <div class="cross-stat-value" id="distanceToLine">--</div>

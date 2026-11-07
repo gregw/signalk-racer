@@ -2,7 +2,11 @@
 /* global describe, test, expect */
 'use strict';
 
-const { startZoneDistances } = require('../racer');
+const { startZoneDistances: distances } = require('../racer');
+
+// Most of these are worked at a 45 degree zone, where the edge is as deep as it is beyond
+// the end.
+const startZoneDistances = (toEnd, angle, clearance = 0, theta = 45) => distances(toEnd, angle, clearance, theta);
 
 // A boat lying `overshoot` metres beyond the closest end of the line and `across` metres
 // off it, expressed as the (toEnd, angle) pair startZoneDistances takes. A positive
@@ -77,23 +81,76 @@ describe('start VMG zone distances', () => {
     test('OCS beyond the end: back to the clearance, then along into the zone', () => {
         // 150m beyond the end, 60m on the course side, back to 30m behind the line: the
         // 45 degree zone stands 30m beyond the end at that depth.
-        const d = startZoneDistances(boat(150, -60).toEnd, boat(150, -60).angle, 45, 30);
+        const d = startZoneDistances(boat(150, -60).toEnd, boat(150, -60).angle, 30);
         expect(d.ocs).toBe(true);
         expect(d.inStartZone).toBe(false);
         expect(d.perpToLineVx).toBeCloseTo(60, 6);
+        expect(d.retreat).toBeCloseTo(90, 6);
+        expect(d.depth).toBe(30);
         expect(d.toZoneVz).toBeCloseTo(120, 6);
         expect(d.clearance).toBe(30);
         expect(d.distanceToLine).toBeCloseTo(-60, 1);
     });
 
-    test('the zone edge follows the transition line angle', () => {
+    test('OCS between the ends: just back behind the line', () => {
+        const d = startZoneDistances(boat(-20, -35).toEnd, boat(-20, -35).angle, 30);
+        expect(d.retreat).toBeCloseTo(35, 6);
+        expect(d.toZoneVz).toBe(0);
+        expect(d.depth).toBe(0);
+        expect(d.distanceToLine).toBeCloseTo(-35, 1);
+    });
+
+    test('OCS just beyond an end: back only as far as the zone edge', () => {
+        // 20m beyond the end, 10m over: the zone edge is 20m deep there.
+        const d = startZoneDistances(boat(20, -10).toEnd, boat(20, -10).angle, 30);
+        expect(d.retreat).toBeCloseTo(30, 6);
+        expect(d.depth).toBeCloseTo(20, 6);
+        expect(d.toZoneVz).toBeCloseTo(0, 6);
+    });
+
+    test('outside the zone and shallower than the clearance: back to it first', () => {
+        // 150m beyond the end, 10m behind the line, 30m clearance: 20m back, 120m along
+        // at 30m deep, 30m up.
+        const d = startZoneDistances(boat(150, 10).toEnd, boat(150, 10).angle, 30);
+        expect(d.inStartZone).toBe(false);
+        expect(d.retreat).toBeCloseTo(20, 6);
+        expect(d.depth).toBeCloseTo(30, 6);
+        expect(d.toZoneVz).toBeCloseTo(120, 6);
+        expect(d.toLine).toBeCloseTo(170, 1);
+    });
+
+    test('near the end the retreat stops at the zone edge', () => {
+        // 20m beyond the end, 10m behind the line: the zone edge is 20m deep there, so
+        // 10m back to it, nothing along, 20m up.
+        const d = startZoneDistances(boat(20, 10).toEnd, boat(20, 10).angle, 30);
+        expect(d.inStartZone).toBe(false);
+        expect(d.retreat).toBeCloseTo(10, 6);
+        expect(d.depth).toBeCloseTo(20, 6);
+        expect(d.toZoneVz).toBeCloseTo(0, 6);
+        expect(d.toLine).toBeCloseTo(30, 1);
+    });
+
+    test('no retreat inside the zone, or deeper than the clearance', () => {
+        const inside = startZoneDistances(boat(-30, 5).toEnd, boat(-30, 5).angle, 30);
+        expect(inside.inStartZone).toBe(true);
+        expect(inside.retreat).toBeCloseTo(0, 6);
+        expect(inside.toLine).toBeCloseTo(5, 1);
+        const deep = startZoneDistances(boat(120, 90).toEnd, boat(120, 90).angle, 30);
+        expect(deep.retreat).toBeCloseTo(0, 6);
+        expect(deep.toZoneVz).toBeCloseTo(30, 6);
+    });
+
+    test('the zone edge follows the zone angle, 60 degrees by default', () => {
         const {toEnd, angle} = boat(120, 90);
-        // At 35 degrees the zone stands 128m beyond the end at 90m off: inside it.
-        expect(startZoneDistances(toEnd, angle, 35).toZoneVz).toBe(0);
-        // At 60 degrees, 52m: 68m to sail along the line.
-        expect(startZoneDistances(toEnd, angle, 60).toZoneVz).toBeCloseTo(120 - 90 / Math.tan(Math.PI / 3), 6);
+        // At 60 degrees the edge stands 90 / tan 60 = 52m beyond the end at 90m deep.
+        expect(distances(toEnd, angle).toZoneVz).toBeCloseTo(120 - 90 / Math.sqrt(3), 6);
         // At 90 degrees the zone is just the line's span.
-        expect(startZoneDistances(toEnd, angle, 90).toZoneVz).toBeCloseTo(120, 6);
+        expect(startZoneDistances(toEnd, angle, 0, 90).toZoneVz).toBeCloseTo(120, 6);
+        // Shallower than the clearance near an end, back only to the edge: 20m beyond the
+        // end, the 60 degree edge is 20 tan 60 = 34.6m deep.
+        const near = distances(boat(20, 10).toEnd, boat(20, 10).angle, 50);
+        expect(near.depth).toBeCloseTo(20 * Math.sqrt(3), 6);
+        expect(near.toZoneVz).toBeCloseTo(0, 6);
     });
 });
 

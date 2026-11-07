@@ -8,7 +8,7 @@ This plugin adds sail racing relevant data to a Signal K server. It focuses on r
  + Calculation of the distance, time to line and time to burn, from the
    [bow](https://github.com/gregw/signalk-racer/wiki/Bow-position) ([read more](https://github.com/gregw/signalk-racer/wiki/Algorithms))
  + Best and effective VMGs for the time to line, from recent sailing and, when available, the
-   boat's polars ([read more](https://github.com/gregw/signalk-racer/wiki/VMG))
+   boat's polars ([read more](https://github.com/gregw/signalk-racer/wiki/Start-VMG))
  + Calculation of the TWA for the next leg of the course ([read more](https://github.com/gregw/signalk-racer/wiki/Signal-K-Paths))
 
 These values can be displayed in Skip/KIP widgets, Freeboard-SK, or other Signal K clients.
@@ -50,7 +50,7 @@ See [Configuration](https://github.com/gregw/signalk-racer/wiki/Configuration) f
 Used when present; without them the related values are not published, or a fallback is used:
 - **[signalk-polar-management](https://www.npmjs.com/package/signalk-polar-management) 1.5+**,
   with an active polar, to use the boat's polars for the
-  [best VMGs](https://github.com/gregw/signalk-racer/wiki/VMG). Racer finds its in-process
+  [best VMGs](https://github.com/gregw/signalk-racer/wiki/Start-VMG). Racer finds its in-process
   service at run time, so has no npm dependency on it, and works without it.
 - **Wind instruments**, through the server's NMEA support, for the true wind direction (the
   line bias and next leg TWA) and speed (the polars). Where they only give apparent wind,
@@ -64,9 +64,8 @@ Used when present; without them the related values are not published, or a fallb
 - **[signalk-polar-performance](https://www.npmjs.com/package/signalk-polar-performance)**,
   or anything else publishing the beat and gybe angles (`performance.beatAngle`,
   `performance.gybeAngle`), for the
-  [start VMG zone](https://github.com/gregw/signalk-racer/wiki/Start-VMG-Zone). Without them the
-  angles come from the polar, or the zone stays at the default fixed 45°. They will also be
-  needed to work out the time and distance to lay a mark.
+  [lay lines](https://github.com/gregw/signalk-racer/wiki/Webapp#lay-lines) in the webapp's line
+  view. They will also be needed to work out the time and distance to lay a mark.
 - **Bearing and distance to the next waypoint** _(future)_, not used yet, for the time and
   distance to lay. These can come from the server's Course API (set by Freeboard-SK or another
   plotter), or from a chart plotter's NMEA feed (e.g. 0183 `RMB`/`BWC`, NMEA 2000 PGN 129284)
@@ -87,7 +86,7 @@ The details are in the [wiki](https://github.com/gregw/signalk-racer/wiki):
 - [Signal K Paths](https://github.com/gregw/signalk-racer/wiki/Signal-K-Paths) published by the plugin
 - [Configuration](https://github.com/gregw/signalk-racer/wiki/Configuration) parameters
 - [Algorithms](https://github.com/gregw/signalk-racer/wiki/Algorithms) for the line, distance, time to line and time to burn
-- [VMG](https://github.com/gregw/signalk-racer/wiki/VMG): how the best and effective VMGs are worked out, with and without polars
+- [Start VMG](https://github.com/gregw/signalk-racer/wiki/Start-VMG): how the best and effective VMGs are worked out, with and without polars
 - [Bow position](https://github.com/gregw/signalk-racer/wiki/Bow-position) and the server's GNSS (CCRP) correction
 - [Webapp](https://github.com/gregw/signalk-racer/wiki/Webapp) start line visualisation and VMG detail page
 - [Skip Widgets](https://github.com/gregw/signalk-racer/wiki/Skip-Widgets)
