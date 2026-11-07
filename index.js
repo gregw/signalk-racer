@@ -645,10 +645,21 @@ module.exports = (app) => {
                 const value = handle.speedAt({tws, twa})?.value;
                 return Number.isFinite(value) ? value : null;
             };
+            // The polar's own best VMG angles upwind and downwind, radians.
+            const targetAngles = (tws) => {
+                try {
+                    const value = typeof handle.targetsAt === 'function' ? handle.targetsAt({tws})?.value : null;
+                    const beat = value?.beat?.twa, run = value?.run?.twa;
+                    return Number.isFinite(beat) && Number.isFinite(run) ? {beatAngle: beat, gybeAngle: run} : null;
+                } catch (err) {
+                    return null;
+                }
+            };
             // The wind range the polar was measured over: ratios are only taken within it.
             const axis = Array.isArray(twsAxis) ? twsAxis.filter(Number.isFinite) : [];
             return {
                 speedAt,
+                targetAngles,
                 performanceFactor: Number.isFinite(performanceFactor) ? performanceFactor : 1,
                 minTws: axis.length ? Math.min(...axis) : null,
                 maxTws: axis.length ? Math.max(...axis) : null,
@@ -2036,11 +2047,21 @@ module.exports = (app) => {
                     const routes = await app.resourcesApi.listResources('routes', {})
                         .then(all => Object.entries(all || {}).map(([id, r]) => ({id, name: r?.name ?? id})))
                         .catch(() => []);
-                    const twd = selfNumber('environment.wind.directionTrue');
+                    // The wind the TWAs are worked out for: the live wind, or one set on the
+                    // page (?twd= in radians, ?tws= in m/s) to review the course in another.
+                    const query = (name) => {
+                        const value = req.query?.[name] != null && req.query[name] !== '' ? Number(req.query[name]) : NaN;
+                        return Number.isFinite(value) ? value : null;
+                    };
+                    const liveTwd = selfNumber('environment.wind.directionTrue');
+                    const liveTws = selfNumber('environment.wind.speedTrue');
+                    const manualTwd = query('twd');
+                    const twd = manualTwd ?? liveTwd;
+                    const tws = manualTwd != null ? query('tws') : liveTws;
                     const position = app.getSelfPath('navigation.position')?.value ?? null;
                     const body = {
                         pluginVersion, routes, activeId, routeId: routeId ?? null,
-                        position, twd, tws: selfNumber('environment.wind.speedTrue'),
+                        position, twd, tws, liveTwd, liveTws,
                         nextPoint: publishedNextPoint(),
                         current: currentNow(),
                         // As published by this plugin, for the leg after the point being
@@ -2052,6 +2073,7 @@ module.exports = (app) => {
                         route: null,
                     };
                     if (routeId) {
+                        const polar = activePolar();
                         const route = await routePoints(routeId);
                         const isActive = routeId === activeId;
                         const review = courseReview({
@@ -2060,6 +2082,17 @@ module.exports = (app) => {
                             pointIndex: isActive && Number.isInteger(activeRoute.pointIndex) ? activeRoute.pointIndex : null,
                             position: position?.latitude != null ? position : null,
                             twd,
+                            beatAngle: selfNumber('performance.beatAngle'),
+                            gybeAngle: selfNumber('performance.gybeAngle'),
+                            // Boat speeds from the polar in the wind reviewed, for the time on
+                            // each kind of leg and tack, and, with the performance factor, the
+                            // VMG and ETA on each leg.
+                            speedAt: polar && tws !== null ? (twa) => {
+                                const speed = polar.speedAt(tws, twa);
+                                return speed === null ? null : speed * polar.performanceFactor;
+                            } : null,
+                            tws,
+                            polarAngles: polar && tws !== null ? polar.targetAngles(tws) : null,
                         });
                         const ordered = isActive && activeRoute.reverse ? [...route.points].reverse() : route.points;
                         review.rows.forEach((row, i) => { row.moved = ordered[i].moved; });

@@ -25,11 +25,23 @@
         select { font-size: 1em; padding: 0.2em; background: #222; color: white; border: 1px solid #444; border-radius: 4px; }
         .big { font-family: monospace; font-weight: bold; font-size: 1.2em; }
 
+        /* The wind and current the course is reviewed in: live, or set here. Read-only while live. */
+        .cond { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3em 1em; flex-basis: 100%; }
+        .cond label { white-space: nowrap; }
+        .cond .group { display: inline-flex; align-items: center; gap: 0.25em; white-space: nowrap; }
+        .cond input[type=number] { width: 2.6em; -moz-appearance: textfield; font-size: 1em; text-align: right; background: #222; color: white;
+                                   border: 1px solid #444; border-radius: 4px; padding: 0.1em 0.2em; }
+        .cond input[type=number]:read-only { background: transparent; border-color: transparent; }
+        .cond .unit { color: #aaa; }
+        .cond .adj { font-size: 0.9em; width: 1.8em; background: #333; color: white; border: 1px solid #555; border-radius: 4px; }
+        .cond .adj:disabled { display: none; }
+        .cond input::-webkit-inner-spin-button, .cond input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
         .scroll { overflow-x: auto; }
         table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
         th { color: #aaa; font-weight: normal; font-size: 0.8em; text-align: right; padding: 0.3em 0.5em; border-bottom: 1px solid #333; white-space: nowrap; }
         th.l, td.l { text-align: left; }
-        td { padding: 0.35em 0.5em; text-align: right; font-family: monospace; white-space: nowrap; border-bottom: 1px solid #1a1a1a; }
+        td { padding: 0.15em 0.5em; text-align: right; font-family: monospace; white-space: nowrap; border-bottom: 1px solid #1a1a1a; }
         /* Names wrap rather than widen the table. */
         td.name { font-family: sans-serif; white-space: normal; }
         th.group { text-align: center; border-bottom: none; color: #777; }
@@ -47,14 +59,25 @@
         .port { color: #f66; }
         .sail { color: #888; font-size: 0.8em; }
 
-        /* The current arrow, with its speed lightly over it. Only shown when it is known. */
+        /* The current arrow. Only shown when it is known. */
         .cur { display: none; text-align: center; }
         table.has-current .cur { display: table-cell; }
-        .arrow { position: relative; display: inline-block; width: 2em; height: 2em; vertical-align: middle; }
+        /* The polar's columns, only when there is a polar to work them out from. */
+        .pol { display: none; }
+        table.has-polar .pol { display: table-cell; }
+        .arrow { position: relative; display: inline-block; width: 1.6em; height: 1.6em; vertical-align: middle; }
         .arrow svg { width: 100%; height: 100%; }
-        .arrow b { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-                   font-size: 0.7em; color: white; opacity: 0.75; text-shadow: 0 0 3px black; }
 
+        .totals { display: flex; flex-wrap: wrap; gap: 0.2em 1em; align-items: baseline; margin-bottom: 0.6em; font-size: 0.9em; }
+        .totals b { font-family: monospace; font-size: 1.15em; }
+        .totals .sep { width: 0.5em; }
+        .totals .basis { color: #777; font-size: 0.75em; }
+        /* A fixed box, so a smaller tack letter stays centred and keeps the kind of leg in line. */
+        /* The tack, centred in its own narrow column, close to the angle and kind either side. */
+        td.side-col, th.side-col { text-align: center; padding-left: 0; padding-right: 0; width: 1em; }
+        td.kind { padding-left: 0.2em; }
+        .side { display: inline-flex; align-items: center; justify-content: center; width: 0.7em; height: 1em;
+                vertical-align: middle; line-height: 1; }
         .panel { margin-top: 1em; background: #111; border: 1px solid #333; border-radius: 6px; padding: 0.6em 0.7em; font-size: 0.9em; }
         .panel h2 { font-size: 0.85em; color: #aaa; font-weight: normal; margin: 0 0 0.3em; }
         .dim { color: #666; }
@@ -73,8 +96,23 @@
     <span><span class="label">Route</span> <select id="route" onchange="selectRoute(this.value)"></select></span>
     <span id="routeState" class="label"></span>
     <span><span class="label">Remaining</span> <span id="remaining" class="big">--</span></span>
-    <span><span class="label">TWD / TWS</span> <span id="wind" class="big">--</span></span>
+    <span class="cond" id="wind">
+        <label class="label"><input type="checkbox" id="liveWind" checked onchange="setLive('wind', this.checked)"> Live</label>
+        <span class="group"><span class="label">TWD</span>
+            <button class="adj" onclick="adjust('twd', -5)">&minus;</button><input id="twd" class="big" type="number" min="0" max="359" step="1" inputmode="numeric" oninput="edited()"><span class="unit">°</span><button class="adj" onclick="adjust('twd', 5)">+</button></span>
+        <span class="group"><span class="label">TWS</span>
+            <button class="adj" onclick="adjust('tws', -1)">&minus;</button><input id="tws" class="big" type="number" min="0" max="99" step="0.5" inputmode="decimal" oninput="edited()"><span class="unit">kn</span><button class="adj" onclick="adjust('tws', 1)">+</button></span>
+    </span>
+    <span class="cond" id="current">
+        <label class="label"><input type="checkbox" id="liveCurrent" checked onchange="setLive('current', this.checked)"> Live</label>
+        <span class="group"><span class="label">Set</span>
+            <button class="adj" onclick="adjust('set', -5)">&minus;</button><input id="set" class="big" type="number" min="0" max="359" step="1" inputmode="numeric" oninput="edited()"><span class="unit">°</span><button class="adj" onclick="adjust('set', 5)">+</button></span>
+        <span class="group"><span class="label">Drift</span>
+            <button class="adj" onclick="adjust('drift', -0.2)">&minus;</button><input id="drift" class="big" type="number" min="0" max="20" step="0.1" inputmode="decimal" oninput="edited()"><span class="unit">kn</span><button class="adj" onclick="adjust('drift', 0.2)">+</button></span>
+    </span>
 </div>
+
+<div class="totals" id="totals"></div>
 
 <div class="scroll">
     <table>
@@ -82,7 +120,8 @@
         <tr>
             <th class="c0"></th><th class="c1"></th>
             <th class="group" colspan="2">From here</th>
-            <th class="group legs" colspan="3">Leg from previous point</th>
+            <th class="group legs" colspan="5">Leg from previous point</th>
+            <th class="group pol" colspan="4">At the polar speed</th>
         </tr>
         <tr>
             <th class="l c0">#</th>
@@ -92,6 +131,12 @@
             <th>Heading</th>
             <th>Length nm</th>
             <th>TWA</th>
+            <th class="side-col"></th>
+            <th class="l"></th>
+            <th class="pol">AWA</th>
+            <th class="pol">AWS kn</th>
+            <th class="pol">VMG kn</th>
+            <th class="pol" id="etaHeader">ETA</th>
             <th class="cur">Set</th>
         </tr>
         </thead>
@@ -108,11 +153,21 @@
 <div class="note">
     Bearings are true. <b>BTW/DTW</b>: bearing and distance from the boat to each point.
     <b>Leg heading/length</b>: from the previous point of the course. <b>TWA</b> and <b>Set</b> are
-    the wind and current measured on the boat now, projected onto every leg as if they hold for the
-    whole course: they are not a forecast (no GRIBs or tidal predictions are used). <b>TWA</b>: green
-    to starboard, red to port; on the point being sailed to, the TWA on the bearing from here is
-    shown beneath. <b>Set</b>, when the current is known, is an arrow relative to the leg: up with
-    it, down against it, sideways across it, thicker the stronger it is, with its drift over it. The next point is
+    the wind and current measured on the boat now (or, with <b>Live</b> off, the TWD and TWS, or
+    the set and drift, set above), projected onto every leg as if they hold for the
+    whole course: they are not a forecast (no GRIBs or tidal predictions are used). <b>TWA</b>: a beat
+    within the tack angle, a run beyond the gybe angle (from
+    <code>performance.beatAngle</code> and <code>gybeAngle</code>, or without them the polar's best VMG
+    angles, or 45° and 135°),
+    otherwise a reach; with the favoured tack, green starboard, red port, smaller the closer a beat
+    or run is to even on both tacks. On the point
+    being sailed to, the TWA on the bearing from here is shown beneath. The totals above the table
+    are for the course still to sail, with each beat and run split between tacks. With a polar,
+    <b>AWA/AWS</b> are the apparent wind sailing each leg (on the tack sailed most) at the polar
+    speed with its performance factor, <b>VMG</b> the speed made good along the leg, and <b>ETA</b>
+    the arrival at each point if the wind holds (on a route that is not active, the time from the
+    first point). The current is not allowed for. <b>Set</b>, when the current is known, is an arrow relative to the leg: up with
+    it, down against it, sideways across it, thicker the stronger it is. The next point is
     highlighted. BTW/DTW published by the server's Course API or a plotter over NMEA are shown
     below the table. A waypoint moved since the route was made is flagged: the route keeps its own
     copy of the position, which is what is shown and navigated to.
@@ -122,25 +177,114 @@
     const NM = 1852;
     let selected = null; // null follows the active route
     let lastRoutes = '';
+    // The wind the TWAs are worked out for, and the current shown against each leg: each live
+    // from the boat, or set on the page.
+    const live = {wind: true, current: true};
+    const ANGLES = ['twd', 'set'];
 
     const deg = (v) => v == null ? '--' : String(Math.round((v % 360 + 360) % 360)).padStart(3, '0') + '°';
     const rad2deg = (v) => v == null ? null : v * 180 / Math.PI;
     const dist = (m) => m == null ? '--' : m < NM ? Math.round(m) + ' m' : (m / NM).toFixed(2) + ' nm';
     // Distances in the table are always in nm, with the unit in the header, to keep it narrow.
     const nm = (m) => m == null ? '--' : (m / NM).toFixed(m < 10 * NM ? 2 : 1);
-    const kn = (v) => v == null ? '--' : (v / 0.514444).toFixed(1) + ' kn';
 
-    function twa(v) {
-        if (v == null) return '--';
+    // The TWA, the favoured tack, and the kind of leg. On a beat or run the tack letter is
+    // smaller and fainter the closer the leg is to even on both tacks.
+    function twa(v, sailing) {
+        const {angle, side, kind} = twaParts(v, sailing);
+        return v == null ? '--' : `${angle} ${side}${kind ? ` ${kind}` : ''}`;
+    }
+
+    // The TWA as its three cells: the angle, the favoured tack, and the kind of leg.
+    function twaParts(v, sailing) {
+        if (v == null) return {angle: '--', side: '', kind: ''};
         const a = Math.round(Math.abs(v));
-        const side = v >= 0 ? '<span class="stb">S</span>' : '<span class="port">P</span>';
-        const sail = a < 60 ? 'beat' : a < 120 ? 'reach' : 'run';
-        return `${a}° ${side} <span class="sail">${sail}</span>`;
+        const sideOf = sailing ? sailing.side : (v >= 0 ? 'S' : 'P');
+        const kind = sailing ? sailing.kind : null;
+        let side = sideOf === 'S' ? '<span class="stb">S</span>' : sideOf === 'P' ? '<span class="port">P</span>' : '';
+        if (side && kind && kind !== 'reach') {
+            const b = Math.max(0, Math.min(1, sailing.balance));
+            side = `<span style="font-size:${(0.55 + 0.45 * b).toFixed(2)}em;opacity:${(0.4 + 0.6 * b).toFixed(2)}">${side}</span>`;
+        }
+        if (side) {
+            const title = sailing ? `${Math.round(100 * sailing.starboard / ((sailing.starboard + sailing.port) || 1))}% of the distance on starboard` : '';
+            side = `<span class="side" title="${title}">${side}</span>`;
+        }
+        return {angle: `${a}°`, side, kind: kind ? `<span class="sail">${kind}</span>` : ''};
+    }
+
+    // The TWA's three cells for a row: right-aligned angle, centred tack, then the kind of leg;
+    // on the point being sailed to, the figures from here beneath.
+    function twaCells(r) {
+        const leg = twaParts(r.legTwa, r.legSailing);
+        const here = r.btwTwa != null ? twaParts(r.btwTwa, r.btwSailing) : null;
+        const cell = (cls, part) => `<td class="${cls}">${leg[part] || (here ? '&nbsp;' : '')}${here ? `<span class="published">${here[part] || '&nbsp;'}</span>` : ''}</td>`;
+        return cell('', 'angle') + cell('side-col', 'side') + cell('l kind', 'kind');
+    }
+
+    const pct = (f) => Math.round(100 * f) + '%';
+    const knots = (v) => v == null ? '--' : (v / 0.514444).toFixed(1);
+    // The apparent wind angle: on the same tack as the TWA beside it.
+    const awa = (v) => v == null ? '--' : `${Math.round(Math.abs(v))}°`;
+    // A duration as HH:MM: the polar speeds are not good to the second.
+    function duration(seconds) {
+        const minutes = Math.round(seconds / 60);
+        return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+    }
+    // The time of day of an arrival, with the day when it is not today.
+    function clock(ms) {
+        const at = new Date(ms), now = new Date();
+        const time = at.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+        return at.toDateString() === now.toDateString() ? time : at.toLocaleDateString([], {weekday: 'short'}) + ' ' + time;
+    }
+
+    // The ETA at each point, from the time to sail each leg at the polar speed: from now on
+    // the active route, or the time from the first point on any other.
+    function arrivals(route) {
+        const etas = [];
+        const next = route.active ? route.rows.find(r => r.status === 'next') : null;
+        let elapsed = 0, ok = true;
+        for (const r of route.rows) {
+            if (route.active) {
+                if (r.status === 'passed' || !next) { etas.push(null); continue; }
+                const leg = r === next ? r.btwSailing : r.legSailing;
+                ok = ok && leg?.time != null;
+                elapsed += ok ? leg.time : 0;
+                etas.push(ok ? clock(Date.now() + elapsed * 1000) : null);
+            } else {
+                if (r.index > 0) {
+                    ok = ok && r.legSailing?.time != null;
+                    elapsed += ok ? r.legSailing.time : 0;
+                }
+                etas.push(ok ? (r.index === 0 ? 'start' : '+' + duration(elapsed)) : null);
+            }
+        }
+        return etas;
+    }
+    // Where the tack and gybe angles the legs are sailed at come from.
+    const ANGLE_SOURCES = {
+        'published': 'published', 'polar': 'from the polar', 'default': 'default',
+        'published and polar': 'published, or from the polar', 'published and default': 'published, or default',
+    };
+
+    function renderTotals(totals, angles) {
+        const el = document.getElementById('totals');
+        if (!totals) { el.innerHTML = ''; return; }
+        const anglesNote = angles ? `; tack ${Math.round(angles.beatAngle)}°, gybe ${Math.round(angles.gybeAngle)}° ${ANGLE_SOURCES[angles.source] ?? ''}` : '';
+        el.innerHTML = `
+            <span><span class="label">Beat</span> <b>${pct(totals.beat)}</b></span>
+            <span><span class="label">Reach</span> <b>${pct(totals.reach)}</b></span>
+            <span><span class="label">Run</span> <b>${pct(totals.run)}</b></span>
+            <span class="sep"></span>
+            <span><span class="label port">Port</span> <b>${pct(totals.port)}</b></span>
+            <span><span class="label stb">Starboard</span> <b>${pct(totals.starboard)}</b></span>
+            ${totals.time != null ? `<span><span class="label">Time</span> <b>${duration(totals.time)}</b></span>` : ''}
+            <span class="basis">${totals.timed ? 'of the time, at the polar speeds' : 'of the distance sailed: no polar'}${anglesNote}</span>`;
     }
 
     // The current relative to a leg, as a blue arrow: up when it is with the leg, down when
-    // against it, sideways when across it. Thicker for a stronger current, with its speed
-    // lightly over the arrow. The point being sailed to uses the bearing from here.
+    // against it, sideways when across it. Thicker for a stronger current; its set and drift
+    // are in the tooltip. The point being sailed to uses the bearing from here.
     function currentArrow(current, row) {
         if (!current) return '';
         const heading = row.legHeading ?? (row.status === 'next' ? row.btw : null);
@@ -152,7 +296,68 @@
             <svg viewBox="-20 -20 40 40"><g transform="rotate(${relative.toFixed(0)})">
                 <line x1="0" y1="14" x2="0" y2="-6" stroke="#39f" stroke-width="${width.toFixed(1)}" stroke-linecap="round"/>
                 <path d="M -${(6 + width).toFixed(1)} -4 L 0 -17 L ${(6 + width).toFixed(1)} -4 Z" fill="#39f"/>
-            </g></svg><b>${knots.toFixed(1)}</b></span>`;
+            </g></svg></span>`;
+    }
+
+    // Turning live off keeps the live values in the boxes to adjust from.
+    function setLive(which, on) {
+        live[which] = on;
+        showControls(which);
+        poll();
+    }
+
+    function adjust(id, step) {
+        const input = document.getElementById(id);
+        let value = (Number(input.value) || 0) + step;
+        value = ANGLES.includes(id) ? (value % 360 + 360) % 360 : Math.min(Number(input.max), Math.max(0, value));
+        input.value = ANGLES.includes(id) ? Math.round(value) : value.toFixed(1);
+        edited();
+    }
+
+    // A box's value, or null when it is empty or not a number.
+    function boxValue(id) {
+        const text = document.getElementById(id).value;
+        const value = Number(text);
+        return text === '' || !Number.isFinite(value) ? null : value;
+    }
+
+    let editTimer = null;
+    function edited() {
+        clearTimeout(editTimer);
+        editTimer = setTimeout(poll, 300);
+    }
+
+    function showControls(which) {
+        const row = document.getElementById(which);
+        row.querySelectorAll('input[type=number]').forEach(i => { i.readOnly = live[which]; });
+        row.querySelectorAll('.adj').forEach(b => { b.disabled = live[which]; });
+    }
+
+    // The checkbox follows whether a live value is available: without one, it can only be set here.
+    function followLive(which, available) {
+        const checkbox = document.getElementById(which === 'wind' ? 'liveWind' : 'liveCurrent');
+        checkbox.disabled = !available;
+        if (!available && live[which]) {
+            live[which] = false;
+            checkbox.checked = false;
+            showControls(which);
+        }
+    }
+
+    function windQuery() {
+        const twd = boxValue('twd'), tws = boxValue('tws');
+        if (live.wind || twd === null) return [];
+        const query = ['twd=' + (((twd % 360) + 360) % 360 * Math.PI / 180)];
+        if (tws !== null) query.push('tws=' + tws * 0.514444);
+        return query;
+    }
+
+    // The current shown against each leg: live, or as set here (none until both are set).
+    function currentInUse(data) {
+        if (live.current) return data.current;
+        const set = boxValue('set'), drift = boxValue('drift');
+        return set === null || drift === null ? null
+            : {set: (((set % 360) + 360) % 360) * Math.PI / 180, drift: drift * 0.514444, source: 'set here'};
     }
 
     function selectRoute(id) {
@@ -181,22 +386,40 @@
 
     function render(data) {
         renderRoutes(data);
-        document.getElementById('wind').textContent =
-            data.twd == null ? '--' : `${deg(rad2deg(data.twd))} / ${kn(data.tws)}`;
+        const angle = (rad) => Math.round(((rad2deg(rad) % 360) + 360) % 360);
+        followLive('wind', data.liveTwd != null);
+        if (live.wind) {
+            document.getElementById('twd').value = data.liveTwd == null ? '' : angle(data.liveTwd);
+            document.getElementById('tws').value = data.liveTws == null ? '' : (data.liveTws / 0.514444).toFixed(1);
+        }
+        followLive('current', !!data.current);
+        if (live.current) {
+            document.getElementById('set').value = data.current ? angle(data.current.set) : '';
+            document.getElementById('drift').value = data.current ? (data.current.drift / 0.514444).toFixed(1) : '';
+        }
+        const current = currentInUse(data);
 
         const route = data.route;
         const tbody = document.getElementById('rows');
-        document.querySelector('table').classList.toggle('has-current', !!data.current);
+        document.querySelector('table').classList.toggle('has-current', !!current);
+        const polar = !!route && route.rows.some(r => r.legSailing?.time != null || r.btwSailing?.time != null);
+        document.querySelector('table').classList.toggle('has-polar', polar);
         if (!route) {
             document.getElementById('routeState').textContent = data.nextPoint.length ? 'no route: published next point below' : 'no route';
             document.getElementById('remaining').textContent = '--';
             tbody.innerHTML = '';
+            renderTotals(null);
         } else {
+            renderTotals(route.totals, route.angles);
             const next = route.rows.find(r => r.status === 'next');
             document.getElementById('routeState').textContent = route.active
                 ? `to point ${next ? next.index + 1 : '?'} of ${route.rows.length}${route.reverse ? ', reversed' : ''}`
                 : 'not active';
             document.getElementById('remaining').textContent = dist(route.remaining);
+            const etas = arrivals(route);
+            document.getElementById('etaHeader').textContent = route.active ? 'ETA' : 'Time';
+            // The polar's figures for the leg; on the point being sailed to, from here beneath.
+            const pol = (r, f) => f(r.legSailing) + (r.btwSailing ? `<span class="published">${f(r.btwSailing)}</span>` : '');
             tbody.innerHTML = route.rows.map(r => `
                 <tr class="${r.status ?? ''}">
                     <td class="l c0">${r.index + 1}</td>
@@ -205,8 +428,12 @@
                     <td>${nm(r.dtw)}</td>
                     <td>${deg(r.legHeading)}</td>
                     <td>${nm(r.legLength)}</td>
-                    <td>${twa(r.legTwa)}${r.btwTwa != null ? `<span class="published">${twa(r.btwTwa)}</span>` : ''}</td>
-                    <td class="cur">${currentArrow(data.current, r)}</td>
+                    ${twaCells(r)}
+                    <td class="pol">${pol(r, l => awa(l?.awa))}</td>
+                    <td class="pol">${pol(r, l => knots(l?.aws))}</td>
+                    <td class="pol">${pol(r, l => knots(l?.vmg))}</td>
+                    <td class="pol">${etas[r.index] ?? '--'}</td>
+                    <td class="cur">${currentArrow(current, r)}</td>
                 </tr>`).join('');
         }
 
@@ -230,7 +457,8 @@
 
     async function poll() {
         try {
-            const query = selected ? '?route=' + encodeURIComponent(selected) : '';
+            const params = (selected ? ['route=' + encodeURIComponent(selected)] : []).concat(windQuery());
+            const query = params.length ? '?' + params.join('&') : '';
             const res = await fetch('/plugins/signalk-racer/course' + query, {credentials: 'same-origin'});
             if (!res.ok) throw new Error('HTTP ' + res.status);
             render(await res.json());
@@ -240,6 +468,8 @@
         }
     }
 
+    showControls('wind');
+    showControls('current');
     poll();
     setInterval(poll, 2000);
 </script>

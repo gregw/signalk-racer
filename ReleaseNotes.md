@@ -10,7 +10,9 @@
    and `navigation.racing.effectiveVmg.awayFromLine`
  + Webapp: a menu of START, VMG and COURSE pages, with larger fonts
  + Webapp: VMG page showing everything behind each VMG, with the VMG adjustments
- + Webapp: COURSE page reviewing every leg of the active route
+ + Webapp: COURSE page reviewing every leg of the active route, in the live wind and current
+   or ones set by hand: each leg a beat, reach or run with its favoured tack, and the share of the time
+   on each and on port and starboard; with a polar, the AWA, AWS, VMG and ETA for each leg
  + Webapp: lay lines on the line view (`showLaylines`)
  + Webapp: time to burn (TTB) on the START page
  + Fixed the line bias and next leg TWA not being published in a northerly
