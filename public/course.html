@@ -51,6 +51,11 @@
         .c0 { left: 0; width: 2.2em; min-width: 2.2em; box-sizing: border-box; padding-left: 0.3em; padding-right: 0.3em; }
         .c1 { left: 2.2em; max-width: 9em; border-right: 1px solid #333; }
 
+        /* The From here columns: smaller, and only when ticked beside the Waypoint heading. */
+        td.here { font-size: 0.7em; }
+        table.no-here .here { display: none; }
+        #showHere { margin: 0 0 0 0.3em; vertical-align: middle; cursor: pointer; }
+
         tr.passed td { color: #555; }
         tr.next td { background: #2a2200; color: #fc3; font-weight: bold; }
         .published { display: block; font-size: 0.8em; color: #8cf; font-weight: normal; }
@@ -71,7 +76,6 @@
         .totals { display: flex; flex-wrap: wrap; gap: 0.2em 1em; align-items: baseline; margin-bottom: 0.6em; font-size: 0.9em; }
         .totals b { font-family: monospace; font-size: 1.15em; }
         .totals .sep { width: 0.5em; }
-        .totals .basis { color: #777; font-size: 0.75em; }
         /* A fixed box, so a smaller tack letter stays centred and keeps the kind of leg in line. */
         /* The tack, centred in its own narrow column, close to the angle and kind either side. */
         td.side-col, th.side-col { text-align: center; padding-left: 0; padding-right: 0; width: 1em; }
@@ -119,15 +123,15 @@
         <thead>
         <tr>
             <th class="c0"></th><th class="c1"></th>
-            <th class="group" colspan="2">From here</th>
+            <th class="group here" colspan="2">From here</th>
             <th class="group legs" colspan="5">Leg from previous point</th>
             <th class="group pol" colspan="4">At the polar speed</th>
         </tr>
         <tr>
             <th class="l c0">#</th>
-            <th class="l c1">Waypoint</th>
-            <th>BTW</th>
-            <th>DTW nm</th>
+            <th class="l c1">Waypoint <input type="checkbox" id="showHere" title="Show the bearing and distance from here" onchange="showHere(this.checked)"></th>
+            <th class="here">BTW</th>
+            <th class="here">DTW nm</th>
             <th>Heading</th>
             <th>Length nm</th>
             <th>TWA</th>
@@ -151,7 +155,8 @@
 <div id="status"></div>
 
 <div class="note">
-    Bearings are true. <b>BTW/DTW</b>: bearing and distance from the boat to each point.
+    Bearings are true. <b>BTW/DTW</b>, shown with the tick box beside <b>Waypoint</b>: bearing and
+    distance from the boat to each point.
     <b>Leg heading/length</b>: from the previous point of the course. <b>TWA</b> and <b>Set</b> are
     the wind and current measured on the boat now (or, with <b>Live</b> off, the TWD and TWS, or
     the set and drift, set above), projected onto every leg as if they hold for the
@@ -261,16 +266,9 @@
         }
         return etas;
     }
-    // Where the tack and gybe angles the legs are sailed at come from.
-    const ANGLE_SOURCES = {
-        'published': 'published', 'polar': 'from the polar', 'default': 'default',
-        'published and polar': 'published, or from the polar', 'published and default': 'published, or default',
-    };
-
-    function renderTotals(totals, angles) {
+    function renderTotals(totals) {
         const el = document.getElementById('totals');
         if (!totals) { el.innerHTML = ''; return; }
-        const anglesNote = angles ? `; tack ${Math.round(angles.beatAngle)}°, gybe ${Math.round(angles.gybeAngle)}° ${ANGLE_SOURCES[angles.source] ?? ''}` : '';
         el.innerHTML = `
             <span><span class="label">Beat</span> <b>${pct(totals.beat)}</b></span>
             <span><span class="label">Reach</span> <b>${pct(totals.reach)}</b></span>
@@ -278,8 +276,7 @@
             <span class="sep"></span>
             <span><span class="label port">Port</span> <b>${pct(totals.port)}</b></span>
             <span><span class="label stb">Starboard</span> <b>${pct(totals.starboard)}</b></span>
-            ${totals.time != null ? `<span><span class="label">Time</span> <b>${duration(totals.time)}</b></span>` : ''}
-            <span class="basis">${totals.timed ? 'of the time, at the polar speeds' : 'of the distance sailed: no polar'}${anglesNote}</span>`;
+            ${totals.time != null ? `<span><span class="label">Time</span> <b>${duration(totals.time)}</b></span>` : ''}`;
     }
 
     // The current relative to a leg, as a blue arrow: up when it is with the leg, down when
@@ -360,6 +357,19 @@
             : {set: (((set % 360) + 360) % 360) * Math.PI / 180, drift: drift * 0.514444, source: 'set here'};
     }
 
+    // Whether the From here columns are shown, remembered in this browser.
+    function showHere(on) {
+        document.querySelector('table').classList.toggle('no-here', !on);
+        try { localStorage.setItem('racer.course.showHere', on ? '1' : '0'); } catch (e) {}
+    }
+    (function () {
+        // Off unless ticked before in this browser.
+        let on = false;
+        try { on = localStorage.getItem('racer.course.showHere') === '1'; } catch (e) {}
+        document.getElementById('showHere').checked = on;
+        showHere(on);
+    })();
+
     function selectRoute(id) {
         selected = id === '' ? null : id;
         poll();
@@ -410,7 +420,7 @@
             tbody.innerHTML = '';
             renderTotals(null);
         } else {
-            renderTotals(route.totals, route.angles);
+            renderTotals(route.totals);
             const next = route.rows.find(r => r.status === 'next');
             document.getElementById('routeState').textContent = route.active
                 ? `to point ${next ? next.index + 1 : '?'} of ${route.rows.length}${route.reverse ? ', reversed' : ''}`
@@ -424,8 +434,8 @@
                 <tr class="${r.status ?? ''}">
                     <td class="l c0">${r.index + 1}</td>
                     <td class="l name c1">${r.name ?? '<span class="dim">unnamed</span>'}${r.moved != null ? `<span class="moved">waypoint moved ${dist(r.moved)}</span>` : ''}</td>
-                    <td>${deg(r.btw)}</td>
-                    <td>${nm(r.dtw)}</td>
+                    <td class="here">${deg(r.btw)}</td>
+                    <td class="here">${nm(r.dtw)}</td>
                     <td>${deg(r.legHeading)}</td>
                     <td>${nm(r.legLength)}</td>
                     ${twaCells(r)}
