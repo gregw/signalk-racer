@@ -325,3 +325,29 @@ describe('legSailing', () => {
         expect(courseReview({points}).totals).toBeNull();
     });
 });
+
+describe('tackAngles', () => {
+    const {tackAngles} = require('../course');
+    const rad = (deg) => deg * Math.PI / 180;
+
+    test('published angles are used, whatever their sign', () => {
+        const angles = tackAngles({beatAngle: rad(-40), gybeAngle: rad(150)});
+        expect(angles.beatAngle).toBeCloseTo(40);
+        expect(angles.gybeAngle).toBeCloseTo(150);
+        expect(angles.source).toBe('published');
+    });
+
+    test('without published angles, the polar targets', () => {
+        expect(tackAngles({polarAngles: {beatAngle: rad(38), gybeAngle: rad(148)}}))
+            .toEqual({beatAngle: 38, gybeAngle: 148, source: 'polar'});
+    });
+
+    test('a missing published angle is filled from the polar', () => {
+        const angles = tackAngles({beatAngle: rad(42), polarAngles: {beatAngle: rad(38), gybeAngle: rad(148)}});
+        expect(angles).toEqual({beatAngle: 42, gybeAngle: 148, source: 'published and polar'});
+    });
+
+    test('otherwise 45 and 135', () => {
+        expect(tackAngles()).toEqual({beatAngle: 45, gybeAngle: 135, source: 'default'});
+    });
+});

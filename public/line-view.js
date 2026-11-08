@@ -1,5 +1,6 @@
 /*
  * The start line drawing, shared in substance with the Skip racer-line-view widget.
+ * Needs racer-draw.js loaded first.
  *
  * Ported by hand from the watching screen of the Angular component in Skip
  * (widget-racer-line-view/racer-line-view), so the webapp and the widget show the same
@@ -40,12 +41,14 @@
     const LEGEND_CURRENT = 'Current cog/sog to start';
     const LEGEND_STUB = 'Current course over ground (no timer running)';
 
-    const COLOUR = {
+    // The dark theme's colours; each render takes the theme's own (racer-theme.css).
+    const BASE_COLOUR = {
         line: '#999', port: '#f88', stb: '#8f8', boat: '#6cf', ocs: '#fc0',
         lineOcs: '#f33', lineStarted: '#3c3',
         dimension: '#FC0FC0', zoneLeg: '#b070ff', guide: '#999', label: '#999',
         wind: '#ddd', halo: '#000'
     };
+    let COLOUR = BASE_COLOUR;
 
     /** Offset of a point from an origin, in metres east/north. */
     function offsetFrom(origin, point) {
@@ -292,12 +295,8 @@
             return Math.max(best, MIN_EFFECTIVE_VMG);
         }
 
-        /** One closed hull outline of the given length, pointing along the boat. */
         function hullPath(at, length) {
-            const h = length / 2, b = length * HULL_BEAM_RATIO / 2;
-            return 'M' + at(h, 0) + ' C' + at(h * 0.55, b * 0.42) + ' ' + at(-h * 0.15, b)
-                + ' ' + at(-h, b * 0.55) + ' L' + at(-h, -b * 0.55) + ' C' + at(-h * 0.15, -b)
-                + ' ' + at(h * 0.55, -b * 0.42) + ' ' + at(h, 0) + ' Z';
+            return RacerDraw.hullPath(at, length, HULL_BEAM_RATIO);
         }
 
         /** Whether a leg this long has room for its label in a break in the rule. */
@@ -393,14 +392,9 @@
         function drawLaylines(nav, geo, parts, sx, sy, reach) {
             const twd = nav.twd;
             if (!nav.showLaylines || typeof twd !== 'number' || !isFinite(twd)) return;
-            // Some plugins sign the angles by the tack being sailed: only the size counts.
-            // Without usable published angles, 45 degrees off the wind either way.
-            const angle = function (v, lo, hi, dflt) {
-                const a = typeof v === 'number' && isFinite(v) ? Math.abs(v) : NaN;
-                return a > lo && a < hi ? a : dflt;
-            };
-            const beat = angle(nav.beatAngle, 0, Math.PI / 2, Math.PI / 4);
-            const gybe = angle(nav.gybeAngle, Math.PI / 2, Math.PI, 3 * Math.PI / 4);
+            // As published, else from the polar, else 45 degrees off the wind either way.
+            const angles = RacerDraw.layAngles(nav);
+            const beat = angles.beat, gybe = angles.gybe;
             const lineBearing = geo.bearing * Math.PI / 180;
             const headings = [
                 {h: twd - beat, colour: COLOUR.stb}, {h: twd + beat, colour: COLOUR.port},
@@ -550,6 +544,7 @@
 
         function render(nav) {
             if (!svg) return;
+            COLOUR = RacerDraw.themed(BASE_COLOUR);
             const box = svg.getBoundingClientRect();
             const aspect = box.height > 0 ? box.width / box.height : 400 / VB_HEIGHT;
             // Clamped so an extreme aspect cannot squash the drawing into a sliver.
@@ -579,21 +574,14 @@
 
             // The wind, against the line's own orientation: with the line drawn flat, the
             // arrow's angle is its angle to the line.
+            // The current, as a blue arrow beside it, the way it flows.
+            const toScreen = function (bearing) { return screenVector(bearing, geo.bearing); };
             if (nav.twd != null) {
-                const d = screenVector(nav.twd + Math.PI, geo.bearing);
-                const cx = W - 40, cy = 38, p = {x: -d.y, y: d.x};
-                const at = function (fwd, side) {
-                    return (cx + d.x * fwd + p.x * side).toFixed(1) + ','
-                        + (cy + d.y * fwd + p.y * side).toFixed(1);
-                };
-                const degrees = ((nav.twd * 180 / Math.PI) % 360 + 360) % 360;
                 const off = (((nav.twd * 180 / Math.PI) - geo.bearing) % 360 + 360) % 360;
-                parts.push('<polygon points="' + [at(30, 0), at(4, 16), at(4, 6), at(-30, 6),
-                    at(-30, -6), at(4, -6), at(4, -16)].join(' ') + '" fill="' + COLOUR.wind
-                    + '" fill-opacity="0.65"><title>Wind from '
-                    + degrees.toFixed(0).padStart(3, '0') + '°T, '
-                    + (off > 180 ? 360 - off : off).toFixed(0) + '° to the line</title></polygon>');
+                parts.push(RacerDraw.windArrow(W - 40, 38, nav.twd, toScreen, nav.tws,
+                    (off > 180 ? 360 - off : off).toFixed(0) + '° to the line'));
             }
+            parts.push(RacerDraw.setArrow(W - 105, 38, nav.current, toScreen));
 
             // The length and heading label first of all: it is context for the line, not
             // part of the approach, so anything that overlaps it wins.

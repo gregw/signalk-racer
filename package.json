@@ -10,6 +10,7 @@
     "index.js",
     "racer.js",
     "course.js",
+    "layline.js",
     "openapi.json",
     "public/",
     "ReleaseNotes.md"

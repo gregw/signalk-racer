@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<!-- public/laylines.html: the waypoint being sailed to, its lay lines, and the boat closing on it. -->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SignalK Racer Lay Lines</title>
+    <link rel="stylesheet" href="racer-theme.css">
+    <script src="racer-theme.js"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            /* Sized in em from here, as the other pages are. */
+            font-size: clamp(18px, 12px + 2vw, 48px);
+            margin: 1em auto;
+            padding: 0 16px;
+            text-align: center;
+        }
+        .nav { display: flex; justify-content: space-between; align-items: baseline; font-size: 0.8em; margin-bottom: 0.5em; }
+        .nav b { font-size: 1.2em; }
+        /* As tall as the window allows, leaving room for the numbers below. */
+        #laylineSvg { display: block; width: 100%; height: max(300px, calc(100vh - 11em)); max-height: 1400px; }
+        .stats { display: flex; justify-content: center; gap: 1.5em; margin-top: 0.3em; }
+        .stat { line-height: 1; }
+        .stat-label { font-size: 0.65em; color: var(--muted); }
+        .stat-value { font-size: min(2.6em, 11vw); font-weight: bold; font-family: monospace; }
+        .lay .stat-value { font-size: min(1.8em, 8vw); }
+        .stat-small { font-size: 0.8em; font-family: monospace; color: var(--soft); }
+        #status { margin-top: 0.8em; font-size: 0.6em; color: var(--faint); }
+    </style>
+</head>
+<body>
+
+<div class="nav">
+    <b>Lay lines</b>
+    <span><a href="start.html">Start</a> &middot; <a href="course.html">Course</a> &middot; <a href="index.html">Racer</a></span>
+</div>
+
+<svg id="laylineSvg" viewBox="0 0 450 600" preserveAspectRatio="xMidYMid meet"></svg>
+
+<div class="stats">
+    <div class="stat" title="Bearing to the waypoint">
+        <div class="stat-value" id="btw">---°</div>
+        <div class="stat-label">BTW</div>
+    </div>
+    <div class="stat" title="Distance to the waypoint">
+        <div class="stat-value" id="dtw">--</div>
+        <div class="stat-label">DTW</div>
+    </div>
+</div>
+<div class="stats lay">
+    <div class="stat" title="Sailing on at the COG and SOG: the time and distance to the lay line on the other tack, negative when past it">
+        <div class="stat-value" id="layTime">--:--</div>
+        <div class="stat-small" id="layDistance">--</div>
+        <div class="stat-label">TO LAY LINE</div>
+    </div>
+    <div class="stat" title="Tacking or gybing now: the time and distance to the lay line on this tack, at the SOG, negative when past it">
+        <div class="stat-value" id="oppTime">--:--</div>
+        <div class="stat-small" id="oppDistance">--</div>
+        <div class="stat-label" id="oppLabel">AFTER TACK</div>
+    </div>
+</div>
+
+<div id="status">Connecting...</div>
+
+<script src="racer-draw.js"></script>
+<script src="layline-view.js"></script>
+<script>
+    const TRACK_KEY = 'racer.laylines.track';
+    const TRACK_MINUTES = 60;
+
+    // Everything the drawing needs, filled in from the delta stream.
+    const nav = {
+        mark: null, markName: null,
+        position: null, headingTrue: null, cog: null, sog: null,
+        twd: null, tws: null, current: null, boatLength: null,
+        beatAngle: null, gybeAngle: null, angles: null,
+        track: loadTrack(),
+        // As the plugin publishes them: distances m, times s.
+        layline: {distance: null, time: null},
+        oppositeLayline: {distance: null, time: null},
+    };
+
+    // The track is kept in the browser, so it survives a reload of the page but only
+    // covers the time the page has been open.
+    function loadTrack() {
+        try {
+            const track = JSON.parse(localStorage.getItem(TRACK_KEY) || '[]');
+            const since = Date.now() - TRACK_MINUTES * 60000;
+            return Array.isArray(track) ? track.filter(p => p.t >= since) : [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    let trackSaved = 0;
+    function addToTrack(position) {
+        if (!position || typeof position.latitude !== 'number' || typeof position.longitude !== 'number') return;
+        const now = Date.now();
+        const last = nav.track[nav.track.length - 1];
+        if (last) {
+            const moved = RacerLaylineView.rhumb(last, position).distance;
+            if (now - last.t < 3000 || (moved < 2 && now - last.t < 30000)) return;
+        }
+        nav.track.push({latitude: position.latitude, longitude: position.longitude, t: now});
+        const since = now - TRACK_MINUTES * 60000;
+        while (nav.track.length && nav.track[0].t < since) nav.track.shift();
+        if (now - trackSaved > 30000) {
+            trackSaved = now;
+            try { localStorage.setItem(TRACK_KEY, JSON.stringify(nav.track)); } catch (e) { /* not kept */ }
+        }
+    }
+
+    let view = null, renderPending = false;
+    function scheduleRender() {
+        if (renderPending) return;
+        renderPending = true;
+        requestAnimationFrame(() => {
+            renderPending = false;
+            if (!view) view = RacerLaylineView.create(document.getElementById('laylineSvg'));
+            view.render(nav);
+            renderStats();
+        });
+    }
+
+    function renderStats() {
+        const btw = document.getElementById('btw'), dtw = document.getElementById('dtw');
+        const known = nav.mark && nav.position && typeof nav.position.latitude === 'number';
+        const to = known ? RacerLaylineView.rhumb(nav.position, nav.mark) : null;
+        btw.textContent = to ? Math.round(to.bearing * 180 / Math.PI) % 360 + '°' : '---°';
+        dtw.textContent = to ? RacerLaylineView.formatMetres(to.distance) : '--';
+
+        // Negative, past the lay line, in amber.
+        const show = (lay, time, distance) => {
+            const t = document.getElementById(time), d = document.getElementById(distance);
+            t.textContent = formatTime(lay.time);
+            d.textContent = lay.distance == null ? '--'
+                : (lay.distance < 0 ? '-' : '') + RacerLaylineView.formatMetres(Math.abs(lay.distance));
+            t.style.color = d.style.color = lay.distance != null && lay.distance < 0 ? 'var(--warn)' : '';
+        };
+        show(nav.layline, 'layTime', 'layDistance');
+        show(nav.oppositeLayline, 'oppTime', 'oppDistance');
+        // Downwind, the other lay line is reached by gybing.
+        const downwind = to && typeof nav.twd === 'number'
+            && Math.cos(nav.twd - to.bearing) < 0;
+        document.getElementById('oppLabel').textContent = downwind ? 'AFTER GYBE' : 'AFTER TACK';
+    }
+
+    function formatTime(seconds) {
+        if (seconds == null || !isFinite(seconds)) return '--:--';
+        const sign = seconds < 0 ? '-' : '';
+        const total = Math.round(Math.abs(seconds));
+        const h = Math.floor(total / 3600), m = Math.floor(total / 60) % 60, s = total % 60;
+        const pad = (n) => String(n).padStart(2, '0');
+        return sign + (h ? h + ':' + pad(m) : pad(m)) + ':' + pad(s);
+    }
+
+    function status(message) {
+        document.getElementById('status').textContent = message;
+    }
+
+    // The point being sailed to, from the server's Course API, with its name.
+    function takeNextPoint(point) {
+        const position = point && point.position;
+        const changed = !nav.mark || !position || nav.mark.latitude !== position.latitude
+            || nav.mark.longitude !== position.longitude;
+        nav.mark = position && typeof position.latitude === 'number' ? position : null;
+        if (point && point.name !== undefined) nav.markName = point.name || null;
+        else if (changed) nav.markName = null;
+        scheduleRender();
+    }
+
+    function loadCourse() {
+        fetch(window.location.origin + '/signalk/v2/api/vessels/self/navigation/course')
+            .then(res => res.ok ? res.json() : null)
+            .then(course => {
+                if (!course) return;
+                takeNextPoint(course.nextPoint);
+                const route = course.activeRoute;
+                status(route ? `${route.name || 'Route'}: point ${route.pointIndex + 1} of ${route.pointTotal}`
+                    : course.nextPoint ? 'Sailing to a waypoint' : 'No destination set');
+            })
+            .catch(err => status('Failed to load the course: ' + err.message));
+    }
+
+    function loadInitialState() {
+        const leaf = (node) => (node && node.value !== undefined) ? node.value : null;
+        fetch(window.location.origin + '/signalk/v1/api/vessels/self')
+            .then(res => res.ok ? res.json() : {})
+            .then(self => {
+                const n = self.navigation || {}, wind = (self.environment || {}).wind || {};
+                const perf = self.performance || {};
+                nav.position = nav.position || leaf(n.position);
+                nav.headingTrue = nav.headingTrue ?? leaf(n.headingTrue);
+                nav.cog = nav.cog ?? leaf(n.courseOverGroundTrue);
+                nav.sog = nav.sog ?? leaf(n.speedOverGround);
+                nav.twd = nav.twd ?? leaf(wind.directionTrue);
+                nav.tws = nav.tws ?? leaf(wind.speedTrue);
+                nav.beatAngle = nav.beatAngle ?? leaf(perf.beatAngle);
+                nav.gybeAngle = nav.gybeAngle ?? leaf(perf.gybeAngle);
+                const length = leaf((self.design || {}).length);
+                nav.boatLength = nav.boatLength ?? (typeof length === 'number' ? length : length && length.overall);
+                if (!nav.current) RacerDraw.currentFromTree(nav, self.environment);
+                scheduleRender();
+            })
+            .catch(() => {});
+    }
+
+    function connectWebSocket() {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const socket = new WebSocket(protocol + '//' + window.location.host + '/signalk/v1/stream?subscribe=none');
+        socket.onopen = () => {
+            socket.send(JSON.stringify({
+                context: 'vessels.self',
+                subscribe: [
+                    {path: 'navigation.position', period: 1000},
+                    {path: 'navigation.courseOverGroundTrue', period: 1000},
+                    {path: 'navigation.headingTrue', period: 1000},
+                    {path: 'navigation.speedOverGround', period: 1000},
+                    {path: 'navigation.course.nextPoint', policy: 'instant'},
+                    {path: 'environment.wind.directionTrue', period: 1000},
+                    {path: 'environment.wind.speedTrue', period: 1000},
+                    {path: 'design.length', period: 10000},
+                    {path: 'performance.beatAngle', period: 5000},
+                    {path: 'performance.gybeAngle', period: 5000},
+                    {path: 'navigation.racing.layline.*', period: 1000},
+                    {path: 'navigation.racing.oppositeLayline.*', period: 1000},
+                    ...RacerDraw.CURRENT_PATHS.map(path => ({path, period: 5000})),
+                ]
+            }));
+        };
+        socket.onclose = () => {
+            status('Disconnected. Retrying in 5s...');
+            setTimeout(connectWebSocket, 5000);
+        };
+        socket.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            (data.updates || []).forEach(update => (update.values || []).forEach(({path, value}) => {
+                switch (path) {
+                    case 'navigation.position': nav.position = value; addToTrack(value); break;
+                    case 'navigation.courseOverGroundTrue': nav.cog = value; break;
+                    case 'navigation.headingTrue': nav.headingTrue = value; break;
+                    case 'navigation.speedOverGround': nav.sog = value; break;
+                    // The name only comes with the Course API's own state: fetch it again.
+                    case 'navigation.course.nextPoint': takeNextPoint(value); loadCourse(); break;
+                    case 'environment.wind.directionTrue': nav.twd = value; break;
+                    case 'environment.wind.speedTrue': nav.tws = value; break;
+                    case 'design.length.overall': nav.boatLength = value; break;
+                    case 'performance.beatAngle': nav.beatAngle = value; break;
+                    case 'performance.gybeAngle': nav.gybeAngle = value; break;
+                    case 'navigation.racing.layline.distance': nav.layline.distance = value; break;
+                    case 'navigation.racing.layline.time': nav.layline.time = value; break;
+                    case 'navigation.racing.oppositeLayline.distance': nav.oppositeLayline.distance = value; break;
+                    case 'navigation.racing.oppositeLayline.time': nav.oppositeLayline.time = value; break;
+                    default: if (!RacerDraw.takeCurrent(nav, path, value)) return;
+                }
+                scheduleRender();
+            }));
+        };
+    }
+
+    connectWebSocket();
+    loadInitialState();
+    loadCourse();
+    setInterval(loadCourse, 10000);
+    // Without published angles, the polar's follow the wind.
+    RacerDraw.loadAngles(nav, scheduleRender);
+    setInterval(() => RacerDraw.loadAngles(nav, scheduleRender), 30000);
+    addEventListener('racer-theme', () => scheduleRender());
+    new ResizeObserver(() => scheduleRender()).observe(document.getElementById('laylineSvg'));
+    addEventListener('pagehide', () => {
+        try { localStorage.setItem(TRACK_KEY, JSON.stringify(nav.track)); } catch (e) { /* not kept */ }
+    });
+</script>
+</body>
+</html>

@@ -5,10 +5,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>SignalK Racer</title>
+    <link rel="stylesheet" href="racer-theme.css">
+    <script src="racer-theme.js"></script>
     <style>
         body {
-            background-color: black;
-            color: white;
             font-family: sans-serif;
             /* Everything is sized in em from here, so the page scales with its width:
                about 19px on a phone, 32px at 1000px, up to 48px on a large screen. */
@@ -24,16 +24,22 @@
             display: block;
             padding: 0.7em 0.5em;
             border-radius: 8px;
-            background: #041b8e;
-            color: white;
+            background: var(--accent);
+            color: var(--on-accent);
             text-decoration: none;
             font-weight: bold;
             font-size: 1.3em;
             letter-spacing: 0.05em;
         }
-        .menu a:hover, .menu a:focus { background: #2196F3; }
-        .menu small { display: block; font-weight: normal; font-size: 0.5em; color: #ccd; letter-spacing: 0; margin-top: 0.2em; }
-        #version { margin-top: 1.5em; font-size: 0.6em; color: #888; }
+        .menu a:hover, .menu a:focus { background: var(--accent2); }
+        .menu small { display: block; font-weight: normal; font-size: 0.5em; opacity: 0.8; letter-spacing: 0; margin-top: 0.2em; }
+        #version { margin-top: 1.5em; font-size: 0.6em; color: var(--faint); }
+        /* The theme for the whole webapp. */
+        .themes { margin-top: 1.2em; display: flex; justify-content: center; align-items: center; gap: 0.4em; flex-wrap: wrap; font-size: 0.75em; }
+        .themes .label { color: var(--muted); margin-right: 0.3em; }
+        .themes button { font-size: 1em; padding: 0.35em 0.7em; border-radius: 6px; cursor: pointer;
+                         background: var(--control); color: var(--fg); border: 1px solid var(--input-border); }
+        .themes button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
     </style>
 </head>
 <body>
@@ -41,14 +47,34 @@
 <h1>Signal K Racer</h1>
 
 <div class="menu">
-    <a href="start.html">START<small>Start line, timer and approach</small></a>
-    <a href="vmg.html">VMG<small>Best and effective VMGs, polars and adjustments</small></a>
     <a href="course.html">COURSE<small>Legs, bearings, distances and TWAs of the route</small></a>
+    <a href="start.html">START<small>Start line, timer and approach</small></a>
+    <a href="laylines.html">LAY LINES<small>The waypoint ahead, its lay lines and the approach to it</small></a>
+    <a href="vmg.html">VMG<small>Best and effective VMGs, polars and adjustments</small></a>
+</div>
+
+<div class="themes" id="themes">
+    <span class="label">Theme</span>
+    <button data-theme-choice="auto" title="Night when the boat's environment.mode is night, otherwise the device's light or dark">Auto</button>
+    <button data-theme-choice="dark">Dark</button>
+    <button data-theme-choice="light">Light</button>
+    <button data-theme-choice="night" title="Dim red on black, to keep night vision">Night</button>
 </div>
 
 <div id="version">signalk-racer</div>
 
 <script>
+    // The theme buttons show the choice, and set it for every page.
+    function showTheme() {
+        document.querySelectorAll('[data-theme-choice]').forEach(b =>
+            b.setAttribute('aria-pressed', String(b.dataset.themeChoice === RacerTheme.choice())));
+    }
+    document.querySelectorAll('[data-theme-choice]').forEach(b =>
+        b.addEventListener('click', () => { RacerTheme.set(b.dataset.themeChoice); showTheme(); }));
+    addEventListener('racer-theme', showTheme);
+    addEventListener('storage', showTheme);
+    showTheme();
+
     // The plugin reports its version with the list of lines.
     fetch('/signalk/v1/api/vessels/self/navigation/racing/lines')
         .then(res => res.ok ? res.json() : null)

@@ -161,7 +161,8 @@ module.exports = (app) => {
         }
     }
     const { v4: uuidv4 } = require('uuid');
-    const { courseReview } = require('./course');
+    const { courseReview, tackAngles } = require('./course');
+    const { laylines } = require('./layline');
     const pluginVersion = require('./package.json').version;
     const {
         initRacer,
@@ -1672,14 +1673,23 @@ module.exports = (app) => {
     // the v2 API do not publish navigation.course.activeRoute in the v1 data model, so ask
     // the Course API, and fall back to the v1 path for servers without getCourse.
     async function currentActiveRoute() {
+        return (await currentCourse()).activeRoute;
+    }
+
+    // The active route and the position of the point being sailed to, as above.
+    async function currentCourse() {
         if (typeof app.getCourse === 'function') {
             try {
-                return (await app.getCourse())?.activeRoute ?? null;
+                const course = await app.getCourse();
+                return {activeRoute: course?.activeRoute ?? null, nextPoint: course?.nextPoint?.position ?? null};
             } catch (err) {
                 app.debug('getCourse: ' + err);
             }
         }
-        return app.getSelfPath('navigation.course.activeRoute')?.value ?? null;
+        const nextPoint = app.getSelfPath('navigation.course.nextPoint')?.value?.position
+            ?? app.getSelfPath('navigation.courseGreatCircle.nextPoint.position')?.value
+            ?? app.getSelfPath('navigation.courseRhumbline.nextPoint.position')?.value ?? null;
+        return {activeRoute: app.getSelfPath('navigation.course.activeRoute')?.value ?? null, nextPoint};
     }
 
     // Follow the active route from the Course API, at most every few seconds, as its changes
@@ -1689,7 +1699,9 @@ module.exports = (app) => {
         if (state.activeRouteChecked && now - state.activeRouteChecked < 5000)
             return;
         state.activeRouteChecked = now;
-        currentActiveRoute().then(activeRoute => {
+        currentCourse().then(({activeRoute, nextPoint}) => {
+            state.nextPoint = Number.isFinite(nextPoint?.latitude) && Number.isFinite(nextPoint?.longitude)
+                ? nextPoint : null;
             const key = activeRoute
                 ? `${activeRoute.href}|${activeRoute.pointIndex}|${activeRoute.reverse}`
                 : null;
@@ -1698,6 +1710,53 @@ module.exports = (app) => {
             state.activeRouteKey = key;
             processRoute(activeRoute);
         }).catch(err => app.debug('active route: ' + err));
+    }
+
+    // The tack and gybe angles for the lay lines, radians, re-resolved every few seconds:
+    // as published, else the polar's best VMG angles in the wind, else 45 and 135 degrees.
+    function laylineAngles() {
+        const now = Date.now();
+        if (!state.laylineAngles || now - state.laylineAngles.at > 5000) {
+            const polar = activePolar();
+            const tws = selfNumber('environment.wind.speedTrue');
+            const angles = tackAngles({
+                beatAngle: selfNumber('performance.beatAngle'),
+                gybeAngle: selfNumber('performance.gybeAngle'),
+                polarAngles: polar && tws !== null ? polar.targetAngles(tws) : null,
+                speedAt: polar && tws !== null ? (twa) => polar.speedAt(tws, twa) : null,
+            });
+            state.laylineAngles = {at: now, beat: toRadians(angles.beatAngle), gybe: toRadians(angles.gybeAngle)};
+        }
+        return state.laylineAngles;
+    }
+
+    // The distance and time to the lay lines into the point being sailed to, on the current
+    // COG and SOG (see layline.js), published on the spec's navigation.racing.layline and
+    // oppositeLayline paths, and cleared once when they can't be worked out.
+    function processLaylines(position) {
+        const mark = state.nextPoint;
+        let result = null;
+        if (mark && Number.isFinite(position?.latitude) && Number.isFinite(position?.longitude)) {
+            const angles = laylineAngles();
+            result = laylines({
+                bearing: toRadians(geolib.getRhumbLineBearing(position, mark)),
+                distance: geolib.getPreciseDistance(position, mark, 0.1),
+                cog: selfNumber('navigation.courseOverGroundTrue'),
+                sog: selfNumber('navigation.speedOverGround'),
+                twd: selfNumber('environment.wind.directionTrue'),
+                beatAngle: angles.beat,
+                gybeAngle: angles.gybe,
+            });
+        }
+        if (!result && !state.laylinesPublished)
+            return;
+        state.laylinesPublished = !!result;
+        sendDeltas([
+            {path: 'navigation.racing.layline.distance', value: result?.layline.distance ?? null},
+            {path: 'navigation.racing.layline.time', value: result?.layline.time ?? null},
+            {path: 'navigation.racing.oppositeLayline.distance', value: result?.oppositeLayline.distance ?? null},
+            {path: 'navigation.racing.oppositeLayline.time', value: result?.oppositeLayline.time ?? null},
+        ]);
     }
 
     // A route's points in the route's own order, each named from the waypoint it refers to
@@ -1874,6 +1933,7 @@ module.exports = (app) => {
                         findLineAndThenProcess(position, false);
 
                     checkActiveRoute();
+                    processLaylines(position);
                 }
             )
 
@@ -2103,6 +2163,25 @@ module.exports = (app) => {
                 } catch (err) {
                     res.status(500).json({error: String(err)});
                 }
+            });
+
+            // The tack and gybe angles to draw lay lines with, radians: as published, else the
+            // active polar's best VMG angles in the live wind, else 45° and 135°.
+            router.get('/angles', (req, res) => {
+                const polar = activePolar();
+                const tws = selfNumber('environment.wind.speedTrue');
+                const angles = tackAngles({
+                    beatAngle: selfNumber('performance.beatAngle'),
+                    gybeAngle: selfNumber('performance.gybeAngle'),
+                    polarAngles: polar && tws !== null ? polar.targetAngles(tws) : null,
+                    speedAt: polar && tws !== null ? (twa) => polar.speedAt(tws, twa) : null,
+                });
+                res.json({
+                    beatAngle: angles.beatAngle * Math.PI / 180,
+                    gybeAngle: angles.gybeAngle * Math.PI / 180,
+                    source: angles.source,
+                    tws,
+                });
             });
 
             // Display settings for the webapp, and for any other client drawing the line.

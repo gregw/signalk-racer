@@ -1,0 +1,67 @@
+/*
+ * The webapp's colours, as tokens for each theme: dark (the default), light and night.
+ * racer-theme.js sets data-theme on <html> from the theme chosen on the menu page, or, on
+ * Auto, night when environment.mode is night and otherwise the device's light or dark.
+ * The drawings read the --draw-* tokens when they render.
+ */
+:root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #000; --fg: #fff; --soft: #ccc; --muted: #aaa; --faint: #888; --dim: #666;
+    --border: #333; --rule: #1a1a1a; --panel: #111; --control: #333; --neutral: #555;
+    --input: #222; --input-fg: #fff; --input-border: #444; --readonly: #eee; --readonly-fg: #000;
+    --link: #8cf; --accent: #041b8e; --accent2: #2196F3; --on-accent: #fff; --on-light: #000;
+    --warn: #fc0; --highlight: #2a2200; --highlight-fg: #fc3;
+    --port: #f88; --port-strong: #a00; --port-text: #f66;
+    --stb: #8f8; --stb-strong: #080; --stb-text: #6c6;
+    --current: #39f; --ok: #8f8; --error: #f88;
+    --tag-polar: #135; --tag-polar-fg: #8cf; --tag-samples: #232; --tag-samples-fg: #8f8;
+    --tag-override: #420; --tag-override-fg: #fb6; --tag-now: #303; --tag-now-fg: #f8f;
+
+    --draw-line: #999; --draw-boat: #6cf; --draw-ocs: #fc0; --draw-line-ocs: #f33; --draw-line-started: #3c3;
+    --draw-dimension: #fc0fc0; --draw-zone-leg: #b070ff; --draw-guide: #999; --draw-label: #999;
+    --draw-wind: #ddd; --draw-halo: #000; --draw-port: #f88; --draw-stb: #8f8; --draw-mark: #fa0;
+    --draw-zone: #fa0; --draw-ladder: #888; --draw-set: #39f; --draw-north: #ccc; --draw-track: #6cf;
+}
+
+:root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #fff; --fg: #000; --soft: #333; --muted: #555; --faint: #666; --dim: #999;
+    --border: #ccc; --rule: #e6e6e6; --panel: #f4f4f4; --control: #e4e4e4; --neutral: #777;
+    --input: #fff; --input-fg: #000; --input-border: #aaa; --readonly: #f4f4f4; --readonly-fg: #000;
+    --link: #0550ae; --accent: #041b8e; --accent2: #1769c4; --on-accent: #fff; --on-light: #000;
+    --warn: #b45f00; --highlight: #fff1bf; --highlight-fg: #7a4a00;
+    --port: #f77; --port-strong: #b00; --port-text: #c00;
+    --stb: #7d7; --stb-strong: #070; --stb-text: #070;
+    --current: #0066cc; --ok: #070; --error: #c00;
+    --tag-polar: #dbeafe; --tag-polar-fg: #0550ae; --tag-samples: #dcfce7; --tag-samples-fg: #070;
+    --tag-override: #ffedd5; --tag-override-fg: #9a3412; --tag-now: #fae8ff; --tag-now-fg: #86198f;
+
+    --draw-line: #666; --draw-boat: #0066cc; --draw-ocs: #c80; --draw-line-ocs: #d00; --draw-line-started: #080;
+    --draw-dimension: #c0c; --draw-zone-leg: #73c; --draw-guide: #888; --draw-label: #555;
+    --draw-wind: #555; --draw-halo: #fff; --draw-port: #d33; --draw-stb: #1a1; --draw-mark: #d70;
+    --draw-zone: #d70; --draw-ladder: #999; --draw-set: #0066cc; --draw-north: #444; --draw-track: #0066cc;
+}
+
+/* Dim red on black, to keep night vision. Port and starboard are told apart by brightness and
+   hue: port a deep red, starboard a brighter orange red. */
+:root[data-theme="night"] {
+    color-scheme: dark;
+    --bg: #000; --fg: #c00; --soft: #a00; --muted: #800; --faint: #700; --dim: #500;
+    --border: #300; --rule: #1a0000; --panel: #100; --control: #200; --neutral: #300;
+    --input: #100; --input-fg: #c00; --input-border: #400; --readonly: #100; --readonly-fg: #c00;
+    --link: #e22; --accent: #300; --accent2: #400; --on-accent: #e00; --on-light: #000;
+    --warn: #f40; --highlight: #300; --highlight-fg: #f30;
+    --port: #c00; --port-strong: #400; --port-text: #a00;
+    --stb: #d50; --stb-strong: #520; --stb-text: #e50;
+    --current: #c03; --ok: #a00; --error: #f20;
+    --tag-polar: #200; --tag-polar-fg: #c00; --tag-samples: #200; --tag-samples-fg: #c00;
+    --tag-override: #300; --tag-override-fg: #f30; --tag-now: #200; --tag-now-fg: #e22;
+
+    --draw-line: #800; --draw-boat: #e00; --draw-ocs: #f60; --draw-line-ocs: #f00; --draw-line-started: #c50;
+    --draw-dimension: #d03; --draw-zone-leg: #a02; --draw-guide: #600; --draw-label: #800;
+    --draw-wind: #a00; --draw-halo: #000; --draw-port: #900; --draw-stb: #e50; --draw-mark: #f30;
+    --draw-zone: #f30; --draw-ladder: #500; --draw-set: #c03; --draw-north: #a00; --draw-track: #a00;
+}
+
+html, body { background-color: var(--bg); color: var(--fg); }
+a { color: var(--link); }

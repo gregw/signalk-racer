@@ -5,15 +5,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>SignalK Racer Start</title>
+    <link rel="stylesheet" href="racer-theme.css">
+    <script src="racer-theme.js"></script>
     <style>
 
-        body {
-            background-color: black;
-            color: white; /* optional for visibility */
-        }
-
-        .button-timer-command { background-color: #041b8e; color: white; font-size: 1em; font-weight: bold; }
-        .button-timer-adjust  { background-color: #2196F3; color: white; }
+        .button-timer-command { background-color: var(--accent); color: var(--on-accent); font-size: 1em; font-weight: bold; }
+        .button-timer-adjust  { background-color: var(--accent2); color: var(--on-accent); }
 
         button {
             padding: 0.5em 0.6em;
@@ -34,7 +31,6 @@
             text-align: center;
         }
 
-        a { color: #8cf; }
         .nav { display: flex; justify-content: space-between; align-items: baseline; font-size: 0.8em; margin-bottom: 0.5em; }
         .nav b { font-size: 1.2em; }
 
@@ -50,26 +46,28 @@
             font-size: min(1em, 3.6vw);
         }
 
+        input { background: var(--input); color: var(--input-fg); border: 1px solid var(--input-border); }
         input[readonly] {
-            background: #eee;
-            border: 1px solid #ccc;
+            background: var(--readonly);
+            color: var(--readonly-fg);
+            border: 1px solid var(--input-border);
             padding: 0.3em;
         }
 
         #status {
             margin-top: 1em;
             font-size: 1em;
-            color: green;
+            color: var(--ok);
         }
 
-        .port-set    { background-color: #f88; color: black; font-size: 1em;}
-        .port-move   { background-color: #a00; color: white; }
-        .port-rotate { background-color: #a00; color: white; }
-        .stb-set     { background-color: #8f8; color: black; font-size: 1em; }
-        .stb-move    { background-color: #080; color: white;}
-        .stb-rotate  { background-color: #080; color: white; }
+        .port-set    { background-color: var(--port); color: var(--on-light); font-size: 1em;}
+        .port-move   { background-color: var(--port-strong); color: var(--on-accent); }
+        .port-rotate { background-color: var(--port-strong); color: var(--on-accent); }
+        .stb-set     { background-color: var(--stb); color: var(--on-light); font-size: 1em; }
+        .stb-move    { background-color: var(--stb-strong); color: var(--on-accent);}
+        .stb-rotate  { background-color: var(--stb-strong); color: var(--on-accent); }
 
-        .line-swap { background-color: #555; color: white; font-size: 1.3em; font-weight: bold; }
+        .line-swap { background-color: var(--neutral); color: var(--on-accent); font-size: 1.3em; font-weight: bold; }
 
         .viz-row {
             margin-top: 1em;
@@ -86,7 +84,7 @@
         #lineSvg { display: block; width: 100%; height: min(520px, max(260px, 65vw)); }
 
         .cross-stat { line-height: 1; }
-        .cross-stat-label { font-size: 0.65em; color: #aaa; }
+        .cross-stat-label { font-size: 0.65em; color: var(--muted); }
         /* Large, but three abreast never wider than a phone allows. */
         .cross-stat-value { font-size: min(3em, 8.5vw); font-weight: bold; font-family: monospace; }
         #timeToStart {
@@ -97,6 +95,7 @@
         }
 
         #startLineSelect {
+            background: var(--input); color: var(--input-fg); border: 1px solid var(--input-border);
             font-size: 1em;
             padding: 0.3em;
             margin-left: 0.5em;
@@ -108,9 +107,10 @@
 
 <div class="nav">
     <b>Start</b>
-    <span><a href="vmg.html">VMG</a> &middot; <a href="course.html">Course</a> &middot; <a href="index.html">Racer</a></span>
+    <span><a href="vmg.html">VMG</a> &middot; <a href="laylines.html">Lay lines</a> &middot; <a href="course.html">Course</a> &middot; <a href="index.html">Racer</a></span>
 </div>
 
+<script src="racer-draw.js"></script>
 <script src="line-view.js"></script>
 <script>
     let socket;
@@ -162,6 +162,11 @@
         showLaylines: false,
         beatAngle: null,
         gybeAngle: null,
+        // The angles as the plugin resolves them, from the polar when none are published.
+        angles: null,
+        tws: null,
+        // The current, {set, drift}, when known.
+        current: null,
         effVmgToLine: null,
         effVmgAlongLine: null,
         effVmgAwayFromLine: null,
@@ -216,7 +221,7 @@
             const value = nav.timeToBurn;
             ttb.textContent = formatTimeToMMSS(value);
             // Negative is late for the gun.
-            ttb.style.color = value != null && value < 0 ? '#fc0' : '#fff';
+            ttb.style.color = value != null && value < 0 ? 'var(--warn)' : '';
         }
 
         const dtl = document.getElementById('distanceToLine');
@@ -224,7 +229,7 @@
             const value = nav.distanceToLine;
             dtl.textContent = value == null ? '--' : `${Math.round(value)}m`;
             // Negative is over the line, the one case worth catching at a glance.
-            dtl.style.color = value != null && value < 0 ? '#fc0' : '#fff';
+            dtl.style.color = value != null && value < 0 ? 'var(--warn)' : '';
         }
     }
 
@@ -247,6 +252,8 @@
                     // The hull is drawn at true scale, and the wind against the line.
                     {path: "design.length", period: 10000},
                     {path: "environment.wind.directionTrue", period: 1000},
+                    {path: "environment.wind.speedTrue", period: 1000},
+                    ...RacerDraw.CURRENT_PATHS.map(path => ({path, period: 5000})),
                     // For the lay lines, when shown.
                     {path: "performance.beatAngle", period: 5000},
                     {path: "performance.gybeAngle", period: 5000}
@@ -340,6 +347,9 @@
                                     nav.twd = value.value;
                                     scheduleRender();
                                     break;
+                                case "environment.wind.speedTrue":
+                                    nav.tws = value.value;
+                                    break;
                                 case "navigation.racing.timeToLine":
                                     nav.timeToLine = value.value;
                                     scheduleRender();
@@ -381,6 +391,10 @@
                                     break;
                                 }
                                 default: {
+                                    if (RacerDraw.takeCurrent(nav, value.path, value.value)) {
+                                        scheduleRender();
+                                        break;
+                                    }
                                     // navigation.racing.bestVmg.<name>, and the manual
                                     // adjustment alongside it at .<name>.override
                                     const prefix = "navigation.racing.bestVmg.";
@@ -446,28 +460,29 @@
 
     // The racing paths are subscribed with policy "instant", so they only arrive when
     // they change - which for the line ends may be never. Seed the current state once.
-    // The plugin's display settings, and the tack and gybe angles the lay lines need,
-    // which may only be published now and then.
+    // The plugin's display settings, and the tack and gybe angles the lay lines need:
+    // as published, else from the polar, as the plugin resolves them.
     function loadSettings() {
         fetch(window.location.origin + '/plugins/signalk-racer/settings', {credentials: 'same-origin'})
             .then(res => res.ok ? res.json() : {})
             .then(settings => {
                 // The plugin's default (on) when the settings can't be read, e.g. not logged in.
                 nav.showLaylines = settings.showLaylines !== false;
-                if (!nav.showLaylines) return;
-                return fetch(window.location.origin + '/signalk/v1/api/vessels/self/performance')
-                    .then(res => res.ok ? res.json() : {})
-                    .then(perf => {
-                        const leaf = (node) => (node && node.value !== undefined) ? node.value : null;
-                        if (nav.beatAngle == null) nav.beatAngle = leaf(perf.beatAngle);
-                        if (nav.gybeAngle == null) nav.gybeAngle = leaf(perf.gybeAngle);
-                    });
+                // The angles from the polar, when none are published, follow the wind.
+                if (nav.showLaylines) {
+                    RacerDraw.loadAngles(nav, scheduleRender);
+                    setInterval(() => RacerDraw.loadAngles(nav, scheduleRender), 30000);
+                }
             })
             .catch(err => console.error('Failed to load settings:', err))
             .then(() => scheduleRender());
     }
 
     function loadInitialState() {
+        fetch(window.location.origin + '/signalk/v1/api/vessels/self/environment')
+            .then(res => res.ok ? res.json() : {})
+            .then(environment => { RacerDraw.currentFromTree(nav, environment); scheduleRender(); })
+            .catch(() => {});
         fetch(window.location.origin + '/signalk/v1/api/vessels/self/navigation')
             .then(res => {
                 if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -651,6 +666,7 @@
     // connect WS and load lines once the page is running
     connectWebSocket();
     // The drawing sizes its viewBox to the box it is given, so redraw when that changes.
+    addEventListener('racer-theme', () => scheduleRender());
     document.addEventListener('DOMContentLoaded', () =>
         new ResizeObserver(() => scheduleRender()).observe(document.getElementById('lineSvg')));
     loadStartLines();
@@ -735,7 +751,7 @@
 
 <!-- Race countdown -->
 <div style="margin-top: 1em;">
-    <div style="font-size: 0.75em; color: #aaa;">Time to start</div>
+    <div style="font-size: 0.75em; color: var(--muted);">Time to start</div>
     <div id="timeToStart">--:--</div>
 </div>
 
@@ -760,7 +776,7 @@
 <div class="viz-row">
     <div class="viz">
         <svg id="lineSvg" viewBox="0 0 400 260" preserveAspectRatio="xMidYMid meet"></svg>
-        <div id="lineInfo" style="font-size: 0.9em; color: #aaa;"></div>
+        <div id="lineInfo" style="font-size: 0.9em; color: var(--muted);"></div>
     </div>
 
     <div class="line-stats">
@@ -825,7 +841,7 @@
 </div>
 
 <div id="status">Connecting...</div>
-<div id="pluginVersion" style="margin-top: 0.5em; font-size: 0.8em; color: #888;">signalk-racer</div>
+<div id="pluginVersion" style="margin-top: 0.5em; font-size: 0.8em; color: var(--faint);">signalk-racer</div>
 
 </body>
 </html>

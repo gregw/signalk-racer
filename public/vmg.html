@@ -5,10 +5,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>SignalK Racer VMG</title>
+    <link rel="stylesheet" href="racer-theme.css">
+    <script src="racer-theme.js"></script>
     <style>
         body {
-            background-color: black;
-            color: white;
             font-family: sans-serif;
             /* Scales with the width, more gently than the other pages, as three cards sit
                across: about 17px on a phone, 22px at 1300px, up to 32px. */
@@ -17,15 +17,14 @@
             padding: 0 16px;
             max-width: 2200px;
         }
-        a { color: #8cf; }
         h1 { font-size: 1.2em; margin: 0 0 0.5em; display: flex; justify-content: space-between; align-items: baseline; }
 
         button {
             cursor: pointer;
             border: none;
             border-radius: 4px;
-            background-color: #333;
-            color: white;
+            background-color: var(--control);
+            color: var(--fg);
             padding: 0.3em 0.7em;
             font-size: 0.9em;
         }
@@ -56,50 +55,50 @@
         }
 
         .card {
-            background: #111;
-            border: 1px solid #333;
+            background: var(--panel);
+            border: 1px solid var(--border);
             border-radius: 6px;
             padding: 0.6em 0.7em;
         }
-        .card.leg { border-color: #fc3; }
+        .card.leg { border-color: var(--highlight-fg); }
         .card h2 {
             font-size: 0.85em;
-            color: #aaa;
+            color: var(--muted);
             margin: 0 0 0.3em;
             font-weight: normal;
             display: flex;
             justify-content: space-between;
         }
-        .leg-tag { color: #fc3; }
+        .leg-tag { color: var(--highlight-fg); }
         .best { font-size: 2.2em; font-weight: bold; font-family: monospace; line-height: 1.1; }
         .source { font-size: 0.75em; padding: 0.1em 0.4em; border-radius: 3px; margin-left: 0.4em; vertical-align: middle; }
-        .source.polar { background: #135; color: #8cf; }
-        .source.samples { background: #232; color: #8f8; }
-        .source.override { background: #420; color: #fb6; }
-        .source.now { background: #303; color: #f8f; }
-        .source.floor { background: #333; color: #ccc; }
+        .source.polar { background: var(--tag-polar); color: var(--tag-polar-fg); }
+        .source.samples { background: var(--tag-samples); color: var(--tag-samples-fg); }
+        .source.override { background: var(--tag-override); color: var(--tag-override-fg); }
+        .source.now { background: var(--tag-now); color: var(--tag-now-fg); }
+        .source.floor { background: var(--control); color: var(--soft); }
         /* The row forcing the effective VMG, and the row the best VMG comes from. */
-        tr.forcing td { color: #fc3; font-weight: bold; }
-        tr.from td { color: #fc3; }
+        tr.forcing td { color: var(--highlight-fg); font-weight: bold; }
+        tr.from td { color: var(--highlight-fg); }
 
         table { width: 100%; border-collapse: collapse; font-size: 0.85em; margin-top: 0.3em; }
         td { padding: 0.1em 0; }
-        td:first-child { color: #aaa; }
+        td:first-child { color: var(--muted); }
         td.v { text-align: right; font-family: monospace; white-space: nowrap; }
-        tr.sep td { border-top: 1px solid #222; padding-top: 0.25em; }
-        .dim { color: #666; }
+        tr.sep td { border-top: 1px solid var(--rule); padding-top: 0.25em; }
+        .dim { color: var(--dim); }
 
         .adjust { display: flex; gap: 0.3em; justify-content: center; margin-top: 0.4em; }
 
-        #status { margin-top: 0.8em; font-size: 0.85em; color: #8f8; text-align: center; min-height: 1.2em; }
-        .note { font-size: 0.75em; color: #777; margin-top: 0.8em; line-height: 1.4; }
+        #status { margin-top: 0.8em; font-size: 0.85em; color: var(--ok); text-align: center; min-height: 1.2em; }
+        .note { font-size: 0.75em; color: var(--faint); margin-top: 0.8em; line-height: 1.4; }
     </style>
 </head>
 <body>
 
 <h1>
     <span>VMG detail</span>
-    <span style="font-size:0.7em"><a href="start.html">Start</a> &middot; <a href="course.html">Course</a> &middot; <a href="index.html">Racer</a></span>
+    <span style="font-size:0.7em"><a href="start.html">Start</a> &middot; <a href="laylines.html">Lay lines</a> &middot; <a href="course.html">Course</a> &middot; <a href="index.html">Racer</a></span>
 </h1>
 
 <div class="cross">
@@ -233,7 +232,7 @@
     function status(message, error = false) {
         const el = document.getElementById('status');
         el.textContent = message;
-        el.style.color = error ? '#f88' : '#8f8';
+        el.style.color = error ? 'var(--error)' : 'var(--ok)';
         clearTimeout(statusTimer);
         statusTimer = setTimeout(() => { el.textContent = ''; }, 5000);
     }

@@ -112,6 +112,37 @@ function polarAngles(speedAt) {
 }
 
 /**
+ * The tack (beat) and gybe angles to sail by: as published (e.g. performance.beatAngle and
+ * performance.gybeAngle), else the polar's best VMG angles, else 45° and 135°. Shared by the
+ * course review and the lay lines the webapp draws.
+ *
+ * @param {object} options
+ * @param {?number} [options.beatAngle] Published tack angle, radians (only its size counts).
+ * @param {?number} [options.gybeAngle] Published gybe angle, radians.
+ * @param {?{beatAngle: number, gybeAngle: number}} [options.polarAngles] The polar's own best
+ *   VMG angles in the wind, radians.
+ * @param {?function(number): ?number} [options.speedAt] Boat speed, m/s, at a TWA in radians,
+ *   searched for the best VMG angles when the polar gives none.
+ * @returns {{beatAngle: number, gybeAngle: number, source: string}} Degrees off the wind, and
+ *   where they came from: 'published', 'polar', 'default', or published and one of those.
+ */
+function tackAngles({beatAngle = null, gybeAngle = null, polarAngles: given = null, speedAt = null} = {}) {
+    const angle = (v) => Number.isFinite(v) && v !== 0 ? Math.abs(toDegrees(v)) : null;
+    let angles = {beatAngle: angle(beatAngle), gybeAngle: angle(gybeAngle), source: 'published'};
+    if (angles.beatAngle === null || angles.gybeAngle === null) {
+        const polar = given && angle(given.beatAngle) !== null && angle(given.gybeAngle) !== null
+            ? {beatAngle: angle(given.beatAngle), gybeAngle: angle(given.gybeAngle)}
+            : polarAngles(speedAt);
+        angles = polar
+            ? {beatAngle: angles.beatAngle ?? polar.beatAngle, gybeAngle: angles.gybeAngle ?? polar.gybeAngle,
+                source: angles.beatAngle === null && angles.gybeAngle === null ? 'polar' : 'published and polar'}
+            : {beatAngle: angles.beatAngle ?? DEFAULT_BEAT, gybeAngle: angles.gybeAngle ?? DEFAULT_GYBE,
+                source: angles.beatAngle === null && angles.gybeAngle === null ? 'default' : 'published and default'};
+    }
+    return angles;
+}
+
+/**
  * The time to be spent beating, reaching and running, and on each tack, as fractions of the
  * whole, from the legs' sailing.
  */
@@ -168,18 +199,7 @@ function courseReview({points, reverse = false, pointIndex = null, position = nu
     const ordered = reverse ? [...points].reverse() : points;
     const twdDeg = Number.isFinite(twd) ? toDegrees(twd) : null;
     const active = Number.isInteger(pointIndex);
-    const angle = (v) => Number.isFinite(v) && v !== 0 ? Math.abs(toDegrees(v)) : null;
-    let angles = {beatAngle: angle(beatAngle), gybeAngle: angle(gybeAngle), source: 'published'};
-    if (angles.beatAngle === null || angles.gybeAngle === null) {
-        const polar = given && angle(given.beatAngle) !== null && angle(given.gybeAngle) !== null
-            ? {beatAngle: angle(given.beatAngle), gybeAngle: angle(given.gybeAngle)}
-            : polarAngles(speedAt);
-        angles = polar
-            ? {beatAngle: angles.beatAngle ?? polar.beatAngle, gybeAngle: angles.gybeAngle ?? polar.gybeAngle,
-                source: angles.beatAngle === null && angles.gybeAngle === null ? 'polar' : 'published and polar'}
-            : {beatAngle: angles.beatAngle ?? DEFAULT_BEAT, gybeAngle: angles.gybeAngle ?? DEFAULT_GYBE,
-                source: angles.beatAngle === null && angles.gybeAngle === null ? 'default' : 'published and default'};
-    }
+    const angles = tackAngles({beatAngle, gybeAngle, polarAngles: given, speedAt});
     const options = {beatAngle: angles.beatAngle, gybeAngle: angles.gybeAngle, speedAt, tws};
 
     let remaining = active && position ? 0 : null;
@@ -234,4 +254,4 @@ function courseReview({points, reverse = false, pointIndex = null, position = nu
     return {rows, remaining, totals, angles};
 }
 
-module.exports = {courseReview, legSailing, polarAngles, sailingTotals, signedDegrees};
+module.exports = {courseReview, legSailing, polarAngles, sailingTotals, signedDegrees, tackAngles};

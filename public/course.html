@@ -5,10 +5,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>SignalK Racer Course</title>
+    <link rel="stylesheet" href="racer-theme.css">
+    <script src="racer-theme.js"></script>
     <style>
         body {
-            background-color: black;
-            color: white;
             font-family: sans-serif;
             /* Everything is sized in em from here, so the page scales with its width:
                about 19px on a phone, 32px at 1000px, up to 48px on a large screen. */
@@ -17,52 +17,69 @@
             padding: 0 16px;
             max-width: 2200px;
         }
-        a { color: #8cf; }
         h1 { font-size: 1.2em; margin: 0 0 0.5em; display: flex; justify-content: space-between; align-items: baseline; }
 
         .bar { display: flex; flex-wrap: wrap; gap: 0.5em 1.5em; align-items: center; margin-bottom: 0.6em; font-size: 0.9em; }
-        .bar .label { color: #aaa; }
-        select { font-size: 1em; padding: 0.2em; background: #222; color: white; border: 1px solid #444; border-radius: 4px; }
+        .bar .label { color: var(--muted); }
+        select { font-size: 1em; padding: 0.2em; background: var(--input); color: var(--input-fg); border: 1px solid var(--input-border); border-radius: 4px; }
         .big { font-family: monospace; font-weight: bold; font-size: 1.2em; }
 
         /* The wind and current the course is reviewed in: live, or set here. Read-only while live. */
         .cond { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3em 1em; flex-basis: 100%; }
         .cond label { white-space: nowrap; }
         .cond .group { display: inline-flex; align-items: center; gap: 0.25em; white-space: nowrap; }
-        .cond input[type=number] { width: 2.6em; -moz-appearance: textfield; font-size: 1em; text-align: right; background: #222; color: white;
-                                   border: 1px solid #444; border-radius: 4px; padding: 0.1em 0.2em; }
+        .cond input[type=number] { width: 2.6em; -moz-appearance: textfield; font-size: 1em; text-align: right; background: var(--input); color: var(--input-fg);
+                                   border: 1px solid var(--input-border); border-radius: 4px; padding: 0.1em 0.2em; }
         .cond input[type=number]:read-only { background: transparent; border-color: transparent; }
-        .cond .unit { color: #aaa; }
-        .cond .adj { font-size: 0.9em; width: 1.8em; background: #333; color: white; border: 1px solid #555; border-radius: 4px; }
+        .cond .unit { color: var(--muted); }
+        .cond .adj { font-size: 0.9em; width: 1.8em; background: var(--control); color: var(--fg); border: 1px solid var(--input-border); border-radius: 4px; }
         .cond .adj:disabled { display: none; }
         .cond input::-webkit-inner-spin-button, .cond input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 
         .scroll { overflow-x: auto; }
         table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
-        th { color: #aaa; font-weight: normal; font-size: 0.8em; text-align: right; padding: 0.3em 0.5em; border-bottom: 1px solid #333; white-space: nowrap; }
+        th { color: var(--muted); font-weight: normal; font-size: 0.8em; text-align: right; padding: 0.3em 0.5em; border-bottom: 1px solid var(--border); white-space: nowrap; }
         th.l, td.l { text-align: left; }
-        td { padding: 0.15em 0.5em; text-align: right; font-family: monospace; white-space: nowrap; border-bottom: 1px solid #1a1a1a; }
+        td { padding: 0.15em 0.5em; text-align: right; font-family: monospace; white-space: nowrap; border-bottom: 1px solid var(--rule); }
         /* Names wrap rather than widen the table. */
         td.name { font-family: sans-serif; white-space: normal; }
-        th.group { text-align: center; border-bottom: none; color: #777; }
+        th.group { text-align: center; border-bottom: none; color: var(--faint); }
 
         /* The point number and name stay in view when the table scrolls sideways. */
-        .c0, .c1 { position: sticky; background: black; z-index: 1; }
+        .c0, .c1 { position: sticky; background: var(--bg); z-index: 1; }
         .c0 { left: 0; width: 2.2em; min-width: 2.2em; box-sizing: border-box; padding-left: 0.3em; padding-right: 0.3em; }
-        .c1 { left: 2.2em; max-width: 9em; border-right: 1px solid #333; }
+        .c1 { left: 2.2em; max-width: 9em; border-right: 1px solid var(--border); }
 
-        /* The From here columns: smaller, and only when ticked beside the Waypoint heading. */
+        /* The From here columns are smaller. */
         td.here { font-size: 0.7em; }
-        table.no-here .here { display: none; }
-        #showHere { margin: 0 0 0 0.3em; vertical-align: middle; cursor: pointer; }
+        /* Columns hidden from the menu. */
+        table.hide-here .here, table.hide-leg .leg, table.hide-twa .twa, table.hide-app .app,
+        table.hide-vmg .vmg, table.hide-eta .eta, table.hide-cur .cur { display: none !important; }
 
-        tr.passed td { color: #555; }
-        tr.next td { background: #2a2200; color: #fc3; font-weight: bold; }
-        .published { display: block; font-size: 0.8em; color: #8cf; font-weight: normal; }
-        .moved { color: #f88; font-size: 0.8em; font-family: sans-serif; display: block; }
-        .stb { color: #6c6; }
-        .port { color: #f66; }
-        .sail { color: #888; font-size: 0.8em; }
+        /* The column menu, top right. */
+        .menu-wrap { position: relative; display: inline-block; margin-left: 0.6em; }
+        #menuButton { font-size: 1em; line-height: 1; padding: 0.15em 0.4em; background: var(--input); color: var(--fg);
+                      border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; }
+        #columnMenu { position: absolute; right: 0; top: 1.8em; z-index: 5; background: var(--panel); border: 1px solid var(--input-border);
+                      border-radius: 6px; padding: 0.4em 0.7em; font-size: 0.65em; font-weight: normal;
+                      white-space: nowrap; text-align: left; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5); }
+        #columnMenu[hidden] { display: none; }
+        #columnMenu h2 { font-size: 0.85em; color: var(--muted); font-weight: normal; margin: 0 0 0.3em; }
+        #columnMenu label { display: block; padding: 0.25em 0; cursor: pointer; }
+
+        /* Activating the route shown, and moving along it. */
+        .nav-buttons button { font-size: 0.9em; padding: 0.2em 0.6em; background: var(--accent); color: var(--on-accent); border: none;
+                              border-radius: 4px; cursor: pointer; }
+        .nav-buttons button:disabled { opacity: 0.35; cursor: default; }
+        .nav-buttons button.off { background: var(--neutral); }
+
+        tr.passed td { color: var(--dim); }
+        tr.next td { background: var(--highlight); color: var(--highlight-fg); font-weight: bold; }
+        .published { display: block; font-size: 0.8em; color: var(--link); font-weight: normal; }
+        .moved { color: var(--error); font-size: 0.8em; font-family: sans-serif; display: block; }
+        .stb { color: var(--stb-text); }
+        .port { color: var(--port-text); }
+        .sail { color: var(--faint); font-size: 0.8em; }
 
         /* The current arrow. Only shown when it is known. */
         .cur { display: none; text-align: center; }
@@ -82,23 +99,36 @@
         td.kind { padding-left: 0.2em; }
         .side { display: inline-flex; align-items: center; justify-content: center; width: 0.7em; height: 1em;
                 vertical-align: middle; line-height: 1; }
-        .panel { margin-top: 1em; background: #111; border: 1px solid #333; border-radius: 6px; padding: 0.6em 0.7em; font-size: 0.9em; }
-        .panel h2 { font-size: 0.85em; color: #aaa; font-weight: normal; margin: 0 0 0.3em; }
-        .dim { color: #666; }
-        #status { margin-top: 0.8em; font-size: 0.85em; color: #f88; text-align: center; min-height: 1.2em; }
-        .note { font-size: 0.75em; color: #777; margin-top: 0.8em; line-height: 1.4; }
+        .panel { margin-top: 1em; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 0.6em 0.7em; font-size: 0.9em; }
+        .panel h2 { font-size: 0.85em; color: var(--muted); font-weight: normal; margin: 0 0 0.3em; }
+        .dim { color: var(--dim); }
+        #status { margin-top: 0.8em; font-size: 0.85em; color: var(--error); text-align: center; min-height: 1.2em; }
+        .note { font-size: 0.75em; color: var(--faint); margin-top: 0.8em; line-height: 1.4; }
     </style>
 </head>
 <body>
 
 <h1>
     <span>Course review</span>
-    <span style="font-size:0.7em"><a href="start.html">Start</a> &middot; <a href="vmg.html">VMG</a> &middot; <a href="index.html">Racer</a></span>
+    <span style="font-size:0.7em"><a href="start.html">Start</a> &middot; <a href="vmg.html">VMG</a> &middot; <a href="laylines.html">Lay lines</a> &middot; <a href="index.html">Racer</a>
+        <span class="menu-wrap">
+            <button id="menuButton" title="Columns shown" aria-haspopup="true" aria-expanded="false" onclick="toggleMenu(event)">&#9776;</button>
+            <div id="columnMenu" hidden onclick="event.stopPropagation()">
+                <h2>Columns</h2>
+                <div id="columnChoices"></div>
+            </div>
+        </span>
+    </span>
 </h1>
 
 <div class="bar">
     <span><span class="label">Route</span> <select id="route" onchange="selectRoute(this.value)"></select></span>
     <span id="routeState" class="label"></span>
+    <span class="nav-buttons">
+        <button id="prevPoint" onclick="advance(-1)" title="Back to the previous point">&lt;</button>
+        <button id="activate" onclick="toggleActive()"></button>
+        <button id="nextPoint" onclick="advance(1)" title="On to the next point">&gt;</button>
+    </span>
     <span><span class="label">Remaining</span> <span id="remaining" class="big">--</span></span>
     <span class="cond" id="wind">
         <label class="label"><input type="checkbox" id="liveWind" checked onchange="setLive('wind', this.checked)"> Live</label>
@@ -123,25 +153,26 @@
         <thead>
         <tr>
             <th class="c0"></th><th class="c1"></th>
-            <th class="group here" colspan="2">From here</th>
-            <th class="group legs" colspan="5">Leg from previous point</th>
-            <th class="group pol" colspan="4">At the polar speed</th>
+            <th class="group" data-group="here">From here</th>
+            <th class="group" data-group="leg">Leg from previous point</th>
+            <th class="group" data-group="pol">At the polar speed</th>
+            <th class="group" data-group="cur"></th>
         </tr>
         <tr>
             <th class="l c0">#</th>
-            <th class="l c1">Waypoint <input type="checkbox" id="showHere" title="Show the bearing and distance from here" onchange="showHere(this.checked)"></th>
-            <th class="here">BTW</th>
-            <th class="here">DTW nm</th>
-            <th>Heading</th>
-            <th>Length nm</th>
-            <th>TWA</th>
-            <th class="side-col"></th>
-            <th class="l"></th>
-            <th class="pol">AWA</th>
-            <th class="pol">AWS kn</th>
-            <th class="pol">VMG kn</th>
-            <th class="pol" id="etaHeader">ETA</th>
-            <th class="cur">Set</th>
+            <th class="l c1">Waypoint</th>
+            <th class="here" data-group="here">BTW</th>
+            <th class="here" data-group="here">DTW nm</th>
+            <th class="leg" data-group="leg">Heading</th>
+            <th class="leg" data-group="leg">Length nm</th>
+            <th class="twa" data-group="leg">TWA</th>
+            <th class="twa side-col" data-group="leg"></th>
+            <th class="twa l" data-group="leg"></th>
+            <th class="pol app" data-group="pol">AWA</th>
+            <th class="pol app" data-group="pol">AWS kn</th>
+            <th class="pol vmg" data-group="pol">VMG kn</th>
+            <th class="pol eta" data-group="pol" id="etaHeader">ETA</th>
+            <th class="cur" data-group="cur">Set</th>
         </tr>
         </thead>
         <tbody id="rows"></tbody>
@@ -155,7 +186,7 @@
 <div id="status"></div>
 
 <div class="note">
-    Bearings are true. <b>BTW/DTW</b>, shown with the tick box beside <b>Waypoint</b>: bearing and
+    Bearings are true. The columns shown are chosen from the &#9776; menu. <b>BTW/DTW</b>: bearing and
     distance from the boat to each point.
     <b>Leg heading/length</b>: from the previous point of the course. <b>TWA</b> and <b>Set</b> are
     the wind and current measured on the boat now (or, with <b>Live</b> off, the TWD and TWS, or
@@ -224,7 +255,7 @@
         const leg = twaParts(r.legTwa, r.legSailing);
         const here = r.btwTwa != null ? twaParts(r.btwTwa, r.btwSailing) : null;
         const cell = (cls, part) => `<td class="${cls}">${leg[part] || (here ? '&nbsp;' : '')}${here ? `<span class="published">${here[part] || '&nbsp;'}</span>` : ''}</td>`;
-        return cell('', 'angle') + cell('side-col', 'side') + cell('l kind', 'kind');
+        return cell('twa', 'angle') + cell('twa side-col', 'side') + cell('twa l kind', 'kind');
     }
 
     const pct = (f) => Math.round(100 * f) + '%';
@@ -291,8 +322,8 @@
         const width = Math.min(1.5 + knots * 2.5, 9);
         return `<span class="arrow" title="Set ${deg(rad2deg(current.set))}, drift ${knots.toFixed(1)} kn">
             <svg viewBox="-20 -20 40 40"><g transform="rotate(${relative.toFixed(0)})">
-                <line x1="0" y1="14" x2="0" y2="-6" stroke="#39f" stroke-width="${width.toFixed(1)}" stroke-linecap="round"/>
-                <path d="M -${(6 + width).toFixed(1)} -4 L 0 -17 L ${(6 + width).toFixed(1)} -4 Z" fill="#39f"/>
+                <line x1="0" y1="14" x2="0" y2="-6" style="stroke: var(--current)" stroke-width="${width.toFixed(1)}" stroke-linecap="round"/>
+                <path d="M -${(6 + width).toFixed(1)} -4 L 0 -17 L ${(6 + width).toFixed(1)} -4 Z" style="fill: var(--current)"/>
             </g></svg></span>`;
     }
 
@@ -357,45 +388,147 @@
             : {set: (((set % 360) + 360) % 360) * Math.PI / 180, drift: drift * 0.514444, source: 'set here'};
     }
 
-    // Whether the From here columns are shown, remembered in this browser.
-    function showHere(on) {
-        document.querySelector('table').classList.toggle('no-here', !on);
-        try { localStorage.setItem('racer.course.showHere', on ? '1' : '0'); } catch (e) {}
-    }
-    (function () {
-        // Off unless ticked before in this browser.
-        let on = false;
-        try { on = localStorage.getItem('racer.course.showHere') === '1'; } catch (e) {}
-        document.getElementById('showHere').checked = on;
-        showHere(on);
-    })();
+    // The columns, or pairs of them, that can be shown or hidden from the menu, and whether
+    // each is shown by default. Remembered in this browser.
+    const COLUMNS = [
+        {key: 'here', label: 'BTW / DTW from here', shown: false},
+        {key: 'leg', label: 'Leg heading / length', shown: true},
+        {key: 'twa', label: 'TWA, tack and kind of leg', shown: true},
+        {key: 'app', label: 'AWA / AWS (with a polar)', shown: true},
+        {key: 'vmg', label: 'VMG (with a polar)', shown: true},
+        {key: 'eta', label: 'ETA (with a polar)', shown: true},
+        {key: 'cur', label: 'Set (when the current is known)', shown: true},
+    ];
+    const COLUMNS_KEY = 'racer.course.columns';
+    let columnsShown = {};
+    try { columnsShown = JSON.parse(localStorage.getItem(COLUMNS_KEY) || '{}') || {}; } catch (e) { columnsShown = {}; }
+    const isShown = (c) => columnsShown[c.key] ?? c.shown;
 
-    function selectRoute(id) {
-        selected = id === '' ? null : id;
+    function applyColumns() {
+        const table = document.querySelector('table');
+        for (const c of COLUMNS) table.classList.toggle('hide-' + c.key, !isShown(c));
+        fitGroups();
+    }
+
+    function showColumn(key, on) {
+        columnsShown[key] = on;
+        try { localStorage.setItem(COLUMNS_KEY, JSON.stringify(columnsShown)); } catch (e) {}
+        applyColumns();
+    }
+
+    // Each group heading spans the columns of its group still shown, and goes when none are.
+    function fitGroups() {
+        const headings = [...document.querySelectorAll('thead tr:last-child th[data-group]')];
+        document.querySelectorAll('th.group[data-group]').forEach(group => {
+            const shown = headings.filter(h => h.dataset.group === group.dataset.group
+                && getComputedStyle(h).display !== 'none').length;
+            group.colSpan = Math.max(shown, 1);
+            group.style.display = shown ? '' : 'none';
+        });
+    }
+
+    function toggleMenu(event) {
+        event.stopPropagation();
+        const menu = document.getElementById('columnMenu');
+        menu.hidden = !menu.hidden;
+        document.getElementById('menuButton').setAttribute('aria-expanded', String(!menu.hidden));
+    }
+    document.addEventListener('click', () => {
+        document.getElementById('columnMenu').hidden = true;
+        document.getElementById('menuButton').setAttribute('aria-expanded', 'false');
+    });
+
+    document.getElementById('columnChoices').innerHTML = COLUMNS.map(c =>
+        `<label><input type="checkbox" ${isShown(c) ? 'checked' : ''} onchange="showColumn('${c.key}', this.checked)"> ${c.label}</label>`).join('');
+    applyColumns();
+
+    // Activating and deactivating the route shown, and moving along it, through the server's
+    // Course API. Changing the course needs a login with write access.
+    const COURSE_API = '/signalk/v2/api/vessels/self/navigation/course';
+    let shown = null; // the route shown: {id, active, rows}
+
+    async function courseRequest(method, path, body) {
+        try {
+            const res = await fetch(COURSE_API + path, {
+                method, credentials: 'same-origin',
+                headers: body ? {'Content-Type': 'application/json'} : {},
+                body: body ? JSON.stringify(body) : undefined,
+            });
+            if (!res.ok) throw new Error(res.status === 401 || res.status === 403
+                ? 'log in with write access to change the course' : 'HTTP ' + res.status);
+            document.getElementById('status').textContent = '';
+        } catch (err) {
+            document.getElementById('status').textContent = 'Failed to change the course: ' + err.message;
+        }
         poll();
     }
 
+    function toggleActive() {
+        if (!shown) return;
+        if (shown.active) {
+            // Keep showing the route once it is no longer active.
+            selected = shown.id;
+            courseRequest('DELETE', '');
+        } else {
+            // Following the active route from now on, which this becomes.
+            selected = null;
+            courseRequest('PUT', '/activeRoute', {href: '/resources/routes/' + shown.id, pointIndex: 0, reverse: false});
+        }
+    }
+
+    function advance(step) {
+        if (shown?.active) courseRequest('PUT', '/activeRoute/nextPoint', {value: step});
+    }
+
+    function renderButtons(data) {
+        const route = data.route;
+        shown = route ? {id: selected ?? data.activeId, active: route.active, rows: route.rows} : null;
+        const activate = document.getElementById('activate');
+        activate.hidden = !route;
+        activate.textContent = route?.active ? 'Deactivate' : 'Activate';
+        activate.classList.toggle('off', !!route?.active);
+        activate.title = route?.active ? 'Clear the course: no route is navigated' : 'Navigate this route, from its first point';
+        const next = route?.active ? route.rows.find(r => r.status === 'next') : null;
+        for (const [id, ok] of [['prevPoint', next && next.index > 0], ['nextPoint', next && next.index < route.rows.length - 1]]) {
+            const button = document.getElementById(id);
+            button.hidden = !route?.active;
+            button.disabled = !ok;
+        }
+    }
+
+    // Picking the active route follows it, as it advances or is changed elsewhere.
+    function selectRoute(id) {
+        selected = id === '' || id === lastActiveId ? null : id;
+        poll();
+    }
+
+    let lastActiveId = null;
     function renderRoutes(data) {
+        lastActiveId = data.activeId;
         const key = JSON.stringify([data.routes, data.activeId, selected]);
         if (key === lastRoutes) return;
         lastRoutes = key;
         const select = document.getElementById('route');
         select.innerHTML = '';
-        const follow = document.createElement('option');
-        follow.value = '';
-        follow.textContent = data.activeId ? 'Active route' : 'Active route (none)';
-        select.appendChild(follow);
+        // With nothing active and nothing picked, there is nothing to show yet.
+        if (!data.activeId && !selected) {
+            const none = document.createElement('option');
+            none.value = '';
+            none.textContent = data.routes.length ? 'Choose a route' : 'No routes';
+            select.appendChild(none);
+        }
         for (const r of data.routes) {
             const o = document.createElement('option');
             o.value = r.id;
             o.textContent = r.name + (r.id === data.activeId ? ' (active)' : '');
             select.appendChild(o);
         }
-        select.value = selected ?? '';
+        select.value = selected ?? data.activeId ?? '';
     }
 
     function render(data) {
         renderRoutes(data);
+        renderButtons(data);
         const angle = (rad) => Math.round(((rad2deg(rad) % 360) + 360) % 360);
         followLive('wind', data.liveTwd != null);
         if (live.wind) {
@@ -414,6 +547,7 @@
         document.querySelector('table').classList.toggle('has-current', !!current);
         const polar = !!route && route.rows.some(r => r.legSailing?.time != null || r.btwSailing?.time != null);
         document.querySelector('table').classList.toggle('has-polar', polar);
+        fitGroups();
         if (!route) {
             document.getElementById('routeState').textContent = data.nextPoint.length ? 'no route: published next point below' : 'no route';
             document.getElementById('remaining').textContent = '--';
@@ -436,13 +570,13 @@
                     <td class="l name c1">${r.name ?? '<span class="dim">unnamed</span>'}${r.moved != null ? `<span class="moved">waypoint moved ${dist(r.moved)}</span>` : ''}</td>
                     <td class="here">${deg(r.btw)}</td>
                     <td class="here">${nm(r.dtw)}</td>
-                    <td>${deg(r.legHeading)}</td>
-                    <td>${nm(r.legLength)}</td>
+                    <td class="leg">${deg(r.legHeading)}</td>
+                    <td class="leg">${nm(r.legLength)}</td>
                     ${twaCells(r)}
-                    <td class="pol">${pol(r, l => awa(l?.awa))}</td>
-                    <td class="pol">${pol(r, l => knots(l?.aws))}</td>
-                    <td class="pol">${pol(r, l => knots(l?.vmg))}</td>
-                    <td class="pol">${etas[r.index] ?? '--'}</td>
+                    <td class="pol app">${pol(r, l => awa(l?.awa))}</td>
+                    <td class="pol app">${pol(r, l => knots(l?.aws))}</td>
+                    <td class="pol vmg">${pol(r, l => knots(l?.vmg))}</td>
+                    <td class="pol eta">${etas[r.index] ?? '--'}</td>
                     <td class="cur">${currentArrow(current, r)}</td>
                 </tr>`).join('');
         }
