@@ -16,13 +16,17 @@
  + Webapp: lay lines on the line view (`showLaylines`), from the polar when no angles are
    published
  + Webapp: LAY LINES page: the waypoint with its lay lines, a wind ladder, and the boat with
-   its COG and track, framed with the boat in the bottom third; BTW and DTW below
+   its COG and a 15 minute track (reload twice to clear it), framed with the boat in the
+   bottom third; BTW, DTW and the time and distance to each lay line below, fitting the window
  + Distance and time to the lay lines into the next point on the current COG and SOG, on the
    standard `navigation.racing.layline` and `oppositeLayline` paths, shown on the LAY LINES page
- + Webapp: COURSE page columns chosen from a menu; Activate/Deactivate the route shown, and
-   step to the previous or next point
+ + Webapp: COURSE page columns chosen from a menu, including an optional leg time;
+   Activate/Deactivate the route shown, and step to the previous or next point; the point
+   being sailed to shows its figures from the boat
+ + Webapp: START page timer and line controls behind ☰ buttons, hidden by default, so the
+   time to start, the line drawing and TTL/TTB/DTL fit the window
  + Webapp: Dark, Light and Night themes, or Auto, following `environment.mode`
- + Webapp: the current as a blue arrow beside the wind on the line view
+ + Webapp: the current as a blue arrow below the wind on the line view
  + Webapp: time to burn (TTB) on the START page
  + Fixed the line bias and next leg TWA not being published in a northerly
  + Fixed the next leg not following the active route on servers using only the v2 Course API
