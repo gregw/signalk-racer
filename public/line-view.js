@@ -18,7 +18,8 @@
     const EARTH_RADIUS = 6371000;
     // Drawing coordinate system. The height is fixed so font sizes scale with the box;
     // the width tracks its aspect so the drawing fills it undistorted.
-    const VB_HEIGHT = 260;
+    const VB_HEIGHT = 260;      // the least height of the viewBox...
+    const MIN_WIDTH = 400;      // ...and the least width: the other follows the box's aspect
     const TOP_BAND = 26;        // kept clear at the top, as the widget keeps it for its title
     const BOTTOM_MARGIN = 26;   // the line never enters the bottom 10%
     const MARGIN = 28;
@@ -109,6 +110,7 @@
      * under a boat that appears to stand still.
      */
     function create(svg) {
+        let H = VB_HEIGHT;      // the viewBox height, as last rendered
         let frame = null;
         let frameKey = null;
         // The exact fit the held frame was made from. Drift is measured against this,
@@ -129,7 +131,7 @@
         }
 
         function bandTop() { return TOP_BAND + LABEL_HEADROOM; }
-        function bandBottom() { return VB_HEIGHT - BOTTOM_MARGIN; }
+        function bandBottom() { return H - BOTTOM_MARGIN; }
 
         /** The end of the line the boat is nearer to, as a distance along the line. */
         function nearestEnd(geo, a) {
@@ -223,7 +225,7 @@
         }
 
         function updateFrame(nav, geo, W) {
-            const key = W + '|' + geo.length.toFixed(1);
+            const key = W + '|' + H + '|' + geo.length.toFixed(1);
             const tolerance = VIEW_SMOOTHING / 100;
             // A lost fix takes the boat away, not the line: hold the frame it was last
             // seen in rather than zooming out to the line and straight back in.
@@ -546,10 +548,13 @@
             if (!svg) return;
             COLOUR = RacerDraw.themed(BASE_COLOUR);
             const box = svg.getBoundingClientRect();
-            const aspect = box.height > 0 ? box.width / box.height : 400 / VB_HEIGHT;
-            // Clamped so an extreme aspect cannot squash the drawing into a sliver.
-            const W = Math.round(VB_HEIGHT * Math.min(Math.max(aspect, 0.6), 4));
-            svg.setAttribute('viewBox', '0 0 ' + W + ' ' + VB_HEIGHT);
+            const aspect = box.height > 0 ? box.width / box.height : MIN_WIDTH / VB_HEIGHT;
+            // At least VB_HEIGHT high and MIN_WIDTH wide, so the labels keep their size in a
+            // tall box as in a wide one; clamped so an extreme aspect cannot make a sliver.
+            const clamped = Math.min(Math.max(aspect, 0.3), 4);
+            const W = Math.round(Math.max(VB_HEIGHT * clamped, MIN_WIDTH));
+            H = Math.round(W / clamped);
+            svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
 
             // The plugin nulls the length when the line is lost, while the end positions
             // keep their last values, so the length is what says there is a line.
@@ -558,7 +563,7 @@
             watchGun(nav, geo);
             if (!geo) {
                 frame = frameKey = frameIdeal = null;
-                svg.innerHTML = '<text x="' + (W / 2) + '" y="' + (VB_HEIGHT / 2)
+                svg.innerHTML = '<text x="' + (W / 2) + '" y="' + (H / 2)
                     + '" text-anchor="middle" fill="' + COLOUR.guide
                     + '" font-size="16">No start line set</text>';
                 return;
@@ -581,7 +586,7 @@
                 parts.push(RacerDraw.windArrow(W - 40, 38, nav.twd, toScreen, nav.tws,
                     (off > 180 ? 360 - off : off).toFixed(0) + '° to the line'));
             }
-            parts.push(RacerDraw.setArrow(W - 105, 38, nav.current, toScreen));
+            parts.push(RacerDraw.setArrow(W - 40, 105, nav.current, toScreen));
 
             // The length and heading label first of all: it is context for the line, not
             // part of the approach, so anything that overlaps it wins.
@@ -608,7 +613,7 @@
                 // The start VMG zone: the line's extensions and the zone's edge off each
                 // end, on the pre-start side only. They decide where the approach turns, so
                 // they sit under it.
-                const reach = (W + VB_HEIGHT) / Math.max(scale, 1e-6);
+                const reach = (W + H) / Math.max(scale, 1e-6);
                 const guide = function (a1, c1, a2, c2) {
                     parts.push('<line x1="' + sx(a1) + '" y1="' + sy(c1) + '" x2="' + sx(a2)
                         + '" y2="' + sy(c2) + '" stroke="' + COLOUR.guide

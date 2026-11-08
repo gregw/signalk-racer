@@ -239,7 +239,7 @@
             // North top left; the wind and the current top right; the ladder's step bottom left.
             parts.push(RacerDraw.northArrow(42, 48, toScreen));
             parts.push(RacerDraw.windArrow(W - 40, 40, nav.twd, toScreen, nav.tws));
-            parts.push(RacerDraw.setArrow(W - 105, 40, nav.current, toScreen));
+            parts.push(RacerDraw.setArrow(W - 40, 107, nav.current, toScreen));
             if (step) {
                 parts.push('<text x="' + EDGE + '" y="' + (H - 10) + '" font-size="18" fill="' + COLOUR.ladder
                     + '">rungs ' + formatMetres(step) + ' apart</text>');

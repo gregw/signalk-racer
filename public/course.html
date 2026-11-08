@@ -54,7 +54,7 @@
         td.here { font-size: 0.7em; }
         /* Columns hidden from the menu. */
         table.hide-here .here, table.hide-leg .leg, table.hide-twa .twa, table.hide-app .app,
-        table.hide-vmg .vmg, table.hide-eta .eta, table.hide-cur .cur { display: none !important; }
+        table.hide-vmg .vmg, table.hide-time .time, table.hide-eta .eta, table.hide-cur .cur { display: none !important; }
 
         /* The column menu, top right. */
         .menu-wrap { position: relative; display: inline-block; margin-left: 0.6em; }
@@ -75,6 +75,8 @@
 
         tr.passed td { color: var(--dim); }
         tr.next td { background: var(--highlight); color: var(--highlight-fg); font-weight: bold; }
+        /* The point being sailed to: its figures are from the boat, not from the last point. */
+        tr.next.from-boat td:not(.c0):not(.c1) { color: var(--link); }
         .published { display: block; font-size: 0.8em; color: var(--link); font-weight: normal; }
         .moved { color: var(--error); font-size: 0.8em; font-family: sans-serif; display: block; }
         .stb { color: var(--stb-text); }
@@ -171,6 +173,7 @@
             <th class="pol app" data-group="pol">AWA</th>
             <th class="pol app" data-group="pol">AWS kn</th>
             <th class="pol vmg" data-group="pol">VMG kn</th>
+            <th class="pol time" data-group="pol" title="The time to sail each leg, HH:MM">Leg time</th>
             <th class="pol eta" data-group="pol" id="etaHeader">ETA</th>
             <th class="cur" data-group="cur">Set</th>
         </tr>
@@ -197,10 +200,10 @@
     angles, or 45° and 135°),
     otherwise a reach; with the favoured tack, green starboard, red port, smaller the closer a beat
     or run is to even on both tacks. On the point
-    being sailed to, the TWA on the bearing from here is shown beneath. The totals above the table
+    being sailed to, every figure is from the boat's position rather than the last point, in blue. The totals above the table
     are for the course still to sail, with each beat and run split between tacks. With a polar,
     <b>AWA/AWS</b> are the apparent wind sailing each leg (on the tack sailed most) at the polar
-    speed with its performance factor, <b>VMG</b> the speed made good along the leg, and <b>ETA</b>
+    speed with its performance factor, <b>VMG</b> the speed made good along the leg, <b>Leg time</b> the time to sail it (HH:MM), and <b>ETA</b>
     the arrival at each point if the wind holds (on a route that is not active, the time from the
     first point). The current is not allowed for. <b>Set</b>, when the current is known, is an arrow relative to the leg: up with
     it, down against it, sideways across it, thicker the stronger it is. The next point is
@@ -250,11 +253,10 @@
     }
 
     // The TWA's three cells for a row: right-aligned angle, centred tack, then the kind of leg;
-    // on the point being sailed to, the figures from here beneath.
+    // on the point being sailed to, from here instead.
     function twaCells(r) {
-        const leg = twaParts(r.legTwa, r.legSailing);
-        const here = r.btwTwa != null ? twaParts(r.btwTwa, r.btwSailing) : null;
-        const cell = (cls, part) => `<td class="${cls}">${leg[part] || (here ? '&nbsp;' : '')}${here ? `<span class="published">${here[part] || '&nbsp;'}</span>` : ''}</td>`;
+        const leg = r.btwTwa != null ? twaParts(r.btwTwa, r.btwSailing) : twaParts(r.legTwa, r.legSailing);
+        const cell = (cls, part) => `<td class="${cls}">${leg[part] || ''}</td>`;
         return cell('twa', 'angle') + cell('twa side-col', 'side') + cell('twa l kind', 'kind');
     }
 
@@ -315,7 +317,7 @@
     // are in the tooltip. The point being sailed to uses the bearing from here.
     function currentArrow(current, row) {
         if (!current) return '';
-        const heading = row.legHeading ?? (row.status === 'next' ? row.btw : null);
+        const heading = row.status === 'next' && row.btw != null ? row.btw : row.legHeading;
         if (heading == null) return '<span class="dim">--</span>';
         const relative = rad2deg(current.set) - heading;
         const knots = current.drift / 0.514444;
@@ -396,6 +398,7 @@
         {key: 'twa', label: 'TWA, tack and kind of leg', shown: true},
         {key: 'app', label: 'AWA / AWS (with a polar)', shown: true},
         {key: 'vmg', label: 'VMG (with a polar)', shown: true},
+        {key: 'time', label: 'Leg time (with a polar)', shown: false},
         {key: 'eta', label: 'ETA (with a polar)', shown: true},
         {key: 'cur', label: 'Set (when the current is known)', shown: true},
     ];
@@ -562,20 +565,22 @@
             document.getElementById('remaining').textContent = dist(route.remaining);
             const etas = arrivals(route);
             document.getElementById('etaHeader').textContent = route.active ? 'ETA' : 'Time';
-            // The polar's figures for the leg; on the point being sailed to, from here beneath.
-            const pol = (r, f) => f(r.legSailing) + (r.btwSailing ? `<span class="published">${f(r.btwSailing)}</span>` : '');
+            // The polar's figures for the leg; on the point being sailed to, from here instead.
+            const fromBoat = (r) => r.status === 'next' && r.btwTwa != null;
+            const pol = (r, f) => f(fromBoat(r) ? r.btwSailing : r.legSailing);
             tbody.innerHTML = route.rows.map(r => `
-                <tr class="${r.status ?? ''}">
+                <tr class="${r.status ?? ''}${fromBoat(r) ? ' from-boat' : ''}">
                     <td class="l c0">${r.index + 1}</td>
                     <td class="l name c1">${r.name ?? '<span class="dim">unnamed</span>'}${r.moved != null ? `<span class="moved">waypoint moved ${dist(r.moved)}</span>` : ''}</td>
                     <td class="here">${deg(r.btw)}</td>
                     <td class="here">${nm(r.dtw)}</td>
-                    <td class="leg">${deg(r.legHeading)}</td>
-                    <td class="leg">${nm(r.legLength)}</td>
+                    <td class="leg">${deg(fromBoat(r) ? r.btw : r.legHeading)}</td>
+                    <td class="leg">${nm(fromBoat(r) ? r.dtw : r.legLength)}</td>
                     ${twaCells(r)}
                     <td class="pol app">${pol(r, l => awa(l?.awa))}</td>
                     <td class="pol app">${pol(r, l => knots(l?.aws))}</td>
                     <td class="pol vmg">${pol(r, l => knots(l?.vmg))}</td>
+                    <td class="pol time">${pol(r, l => l?.time != null ? duration(l.time) : '--')}</td>
                     <td class="pol eta">${etas[r.index] ?? '--'}</td>
                     <td class="cur">${currentArrow(current, r)}</td>
                 </tr>`).join('');

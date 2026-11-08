@@ -35,7 +35,7 @@
         .nav b { font-size: 1.2em; }
 
         /* Time and distance to the line, either side below the drawing. */
-        .line-stats { display: flex; justify-content: center; gap: 1.2em; }
+        .line-stats { display: flex; justify-content: center; align-items: center; gap: min(1.2em, 3vw); }
 
         /* Seven buttons across: on a narrow screen they shrink to fit rather than overflow. */
         .adjust-grid {
@@ -70,6 +70,7 @@
         .line-swap { background-color: var(--neutral); color: var(--on-accent); font-size: 1.3em; font-weight: bold; }
 
         .viz-row {
+            width: 100%;
             margin-top: 1em;
             display: flex;
             flex-direction: column;
@@ -86,13 +87,41 @@
         .cross-stat { line-height: 1; }
         .cross-stat-label { font-size: 0.65em; color: var(--muted); }
         /* Large, but three abreast never wider than a phone allows. */
-        .cross-stat-value { font-size: min(3em, 8.5vw); font-weight: bold; font-family: monospace; }
+        .cross-stat-value { font-size: min(3em, 7.5vw); font-weight: bold; font-family: monospace; white-space: nowrap; }
         #timeToStart {
             font-size: min(3em, 18vw);
             font-weight: bold;
             font-family: monospace;
             line-height: 1.1;
         }
+
+        /* The burger buttons that show and hide the timer and the line controls. */
+        .toggle-row { display: flex; justify-content: center; align-items: center; gap: 0.6em; }
+        .burger { font-size: 0.8em; line-height: 1; padding: 0.15em 0.4em; background: var(--input); color: var(--fg);
+                  border: 1px solid var(--input-border); border-radius: 4px; align-self: center; }
+        .burger[aria-pressed="true"] { background: var(--control); }
+        .hidden-group { display: none !important; }
+        /* Without the timer controls, the time to start sits closer to the nav and the drawing. */
+        body.hide-timerControls .toggle-row { margin-top: 0 !important; }
+        body.hide-timerControls .viz-row { margin-top: 0; }
+        body.hide-timerControls #timeToStart { line-height: 1; }
+
+        /* With both groups hidden, the page is one window high: the time to start at the top,
+           TTL, TTB and DTL along the bottom, and the drawing filling between them. */
+        body.hide-timerControls.hide-lineControls {
+            margin: 0 auto; padding: 0.5em 16px; box-sizing: border-box;
+            height: 100vh; height: 100dvh; overflow: hidden;
+            display: flex; flex-direction: column;
+        }
+        body.hide-timerControls.hide-lineControls > * { flex: none; }
+        body.hide-timerControls.hide-lineControls #status { order: 1; margin-top: 0.2em; font-size: 0.6em; }
+        body.hide-timerControls.hide-lineControls #pluginVersion { display: none; }
+        body.hide-timerControls.hide-lineControls .viz-row { order: 2; flex: 1 1 0; min-height: 0; }
+        body.hide-timerControls.hide-lineControls .viz {
+            flex: 1 1 0; min-height: 0; display: flex; flex-direction: column;
+        }
+        body.hide-timerControls.hide-lineControls #lineSvg { flex: 1 1 0; min-height: 0; height: auto; }
+        body.hide-timerControls.hide-lineControls #lineControls { order: 3; }
 
         #startLineSelect {
             background: var(--input); color: var(--input-fg); border: 1px solid var(--input-border);
@@ -749,12 +778,16 @@
     }
 </script>
 
-<!-- Race countdown -->
-<div style="margin-top: 1em;">
-    <div style="font-size: 0.75em; color: var(--muted);">Time to start</div>
-    <div id="timeToStart">--:--</div>
+<!-- Race countdown, with the burger that shows or hides the timer controls -->
+<div class="toggle-row" style="margin-top: 1em;">
+    <div>
+        <div style="font-size: 0.75em; color: var(--muted);">Time to start</div>
+        <div id="timeToStart">--:--</div>
+    </div>
+    <button class="burger" data-toggles="timerControls" title="Show or hide the timer controls">&#9776;</button>
 </div>
 
+<div id="timerControls">
 <!-- Start Time Row -->
 <div style="margin-top: 1em; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 0.5em;">
     <button class="button-timer-adjust" onclick="adjustStartTime(-60)">-1min</button>
@@ -770,6 +803,7 @@
     <button class="button-timer-command" onclick="setStartTime()">At</button>
     <button class="button-timer-command" onclick="sendTimerCommand('sync')">Sync</button>
     <button class="button-timer-command" onclick="sendTimerCommand('reset')">Reset</button>
+</div>
 </div>
 
 <!-- Start line visualization, with the time and distance to the line below it. -->
@@ -792,9 +826,11 @@
             <div class="cross-stat-value" id="distanceToLine">--</div>
             <div class="cross-stat-label">DTL</div>
         </div>
+        <button class="burger" data-toggles="lineControls" title="Show or hide the start line controls">&#9776;</button>
     </div>
 </div>
 
+<div id="lineControls">
 <!-- Start-line selector -->
 <div style="margin-top: 1em;">
     <label for="startLineSelect">Start line:</label>
@@ -839,6 +875,29 @@
         <div></div>
     </div>
 </div>
+</div>
+
+<script>
+    // Each burger shows or hides its group of controls, remembered in this browser; hidden
+    // until first shown. Hiding the timer controls moves the drawing up.
+    document.querySelectorAll('.burger[data-toggles]').forEach(button => {
+        const id = button.dataset.toggles, key = 'racer.start.hide.' + id;
+        const group = document.getElementById(id);
+        const show = (hidden) => {
+            group.classList.toggle('hidden-group', hidden);
+            document.body.classList.toggle('hide-' + id, hidden);
+            button.setAttribute('aria-pressed', String(!hidden));
+        };
+        let hidden = true;
+        try { hidden = localStorage.getItem(key) !== 'false'; } catch (e) { /* hidden */ }
+        show(hidden);
+        button.addEventListener('click', () => {
+            hidden = !hidden;
+            show(hidden);
+            try { localStorage.setItem(key, String(hidden)); } catch (e) { /* not kept */ }
+        });
+    });
+</script>
 
 <div id="status">Connecting...</div>
 <div id="pluginVersion" style="margin-top: 0.5em; font-size: 0.8em; color: var(--faint);">signalk-racer</div>
